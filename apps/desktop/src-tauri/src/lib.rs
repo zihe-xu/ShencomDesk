@@ -10,7 +10,10 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|tauri_app| crate::app::bootstrap::initialize(tauri_app))
         .invoke_handler(tauri::generate_handler![
-            crate::commands::health::health_check
+            crate::commands::health::health_check,
+            crate::commands::config::get_config,
+            crate::commands::config::save_config,
+            crate::commands::config::reset_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ShenDesk");
