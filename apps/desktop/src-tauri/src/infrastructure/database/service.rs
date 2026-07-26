@@ -30,7 +30,9 @@ impl DatabaseService {
         sqlx::migrate!("./src/infrastructure/database/migrations")
             .run(&pool)
             .await
-            .map_err(|error| AppError::new(format!("failed to run database migrations: {error}")))?;
+            .map_err(|error| {
+                AppError::new(format!("failed to run database migrations: {error}"))
+            })?;
 
         Ok(Self { pool })
     }
@@ -40,7 +42,9 @@ impl DatabaseService {
             .bind(key)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|error| AppError::new(format!("failed to read configuration '{key}': {error}")))
+            .map_err(|error| {
+                AppError::new(format!("failed to read configuration '{key}': {error}"))
+            })
     }
 
     pub async fn set_config_value(&self, key: &str, value: &str) -> Result<(), AppError> {
@@ -67,7 +71,9 @@ impl DatabaseService {
             .bind(key)
             .execute(&self.pool)
             .await
-            .map_err(|error| AppError::new(format!("failed to delete configuration '{key}': {error}")))?;
+            .map_err(|error| {
+                AppError::new(format!("failed to delete configuration '{key}': {error}"))
+            })?;
 
         Ok(())
     }

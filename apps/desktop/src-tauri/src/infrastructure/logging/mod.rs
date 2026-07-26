@@ -33,8 +33,8 @@ pub fn initialize(log_dir: &Path) -> Result<LoggingGuards, AppError> {
     let (error_writer, error_guard) = tracing_appender::non_blocking(error_appender);
     let (operation_writer, operation_guard) = tracing_appender::non_blocking(operation_appender);
 
-    let environment_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let environment_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let app_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
@@ -66,7 +66,9 @@ pub fn initialize(log_dir: &Path) -> Result<LoggingGuards, AppError> {
         .with(error_layer)
         .with(operation_layer)
         .try_init()
-        .map_err(|error| AppError::new(format!("failed to initialize tracing subscriber: {error}")))?;
+        .map_err(|error| {
+            AppError::new(format!("failed to initialize tracing subscriber: {error}"))
+        })?;
 
     install_panic_hook();
 
