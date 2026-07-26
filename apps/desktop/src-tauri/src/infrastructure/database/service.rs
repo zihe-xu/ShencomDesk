@@ -1,11 +1,15 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     SqlitePool,
 };
 
 use crate::utils::AppError;
+
+const DATABASE_MAX_CONNECTIONS: u32 = 5;
+const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const WAL_AUTOCHECKPOINT_PAGES: u32 = 1_000;
 
 /// SQLite access boundary used by application services.
 #[derive(Debug, Clone)]
@@ -19,9 +23,13 @@ impl DatabaseService {
         let options = SqliteConnectOptions::new()
             .filename(database_path)
             .create_if_missing(true)
-            .foreign_keys(true);
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(DATABASE_BUSY_TIMEOUT)
+            .pragma("wal_autocheckpoint", WAL_AUTOCHECKPOINT_PAGES.to_string());
 
-        Self::connect_with_options(options, 5).await
+        Self::connect_with_options(options, DATABASE_MAX_CONNECTIONS).await
     }
 
     async fn connect_with_options(
@@ -90,7 +98,8 @@ impl DatabaseService {
         let options = SqliteConnectOptions::new()
             .filename(":memory:")
             .create_if_missing(true)
-            .foreign_keys(true);
+            .foreign_keys(true)
+            .busy_timeout(DATABASE_BUSY_TIMEOUT);
 
         Self::connect_with_options(options, 1).await
     }
@@ -108,5 +117,96 @@ impl DatabaseService {
                 })?;
 
         Ok(count > 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, time::SystemTime};
+
+    use super::*;
+
+    #[test]
+    fn configures_file_database_for_concurrent_desktop_workloads() {
+        tauri::async_runtime::block_on(async {
+            let database_path = unique_test_database_path();
+            let database = DatabaseService::connect(&database_path)
+                .await
+                .expect("file database should initialize");
+
+            let journal_mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode")
+                .fetch_one(&database.pool)
+                .await
+                .expect("journal mode should be readable");
+            let synchronous = sqlx::query_scalar::<_, i64>("PRAGMA synchronous")
+                .fetch_one(&database.pool)
+                .await
+                .expect("synchronous mode should be readable");
+            let busy_timeout = sqlx::query_scalar::<_, i64>("PRAGMA busy_timeout")
+                .fetch_one(&database.pool)
+                .await
+                .expect("busy timeout should be readable");
+            let foreign_keys = sqlx::query_scalar::<_, i64>("PRAGMA foreign_keys")
+                .fetch_one(&database.pool)
+                .await
+                .expect("foreign key mode should be readable");
+            let wal_autocheckpoint = sqlx::query_scalar::<_, i64>("PRAGMA wal_autocheckpoint")
+                .fetch_one(&database.pool)
+                .await
+                .expect("WAL checkpoint threshold should be readable");
+
+            assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+            assert_eq!(synchronous, 1, "NORMAL synchronous mode should be active");
+            assert_eq!(busy_timeout, DATABASE_BUSY_TIMEOUT.as_millis() as i64);
+            assert_eq!(foreign_keys, 1);
+            assert_eq!(wal_autocheckpoint, i64::from(WAL_AUTOCHECKPOINT_PAGES));
+
+            database.pool.close().await;
+            remove_database_files(&database_path);
+        });
+    }
+
+    #[test]
+    fn accepts_concurrent_short_writes_without_busy_errors() {
+        tauri::async_runtime::block_on(async {
+            let database_path = unique_test_database_path();
+            let database = DatabaseService::connect(&database_path)
+                .await
+                .expect("file database should initialize");
+
+            let mut handles = Vec::new();
+            for index in 0..20 {
+                let database = database.clone();
+                handles.push(tauri::async_runtime::spawn(async move {
+                    let key = format!("concurrency.test.{index}");
+                    database.set_config_value(&key, "ok").await
+                }));
+            }
+
+            for handle in handles {
+                handle
+                    .await
+                    .expect("write task should complete")
+                    .expect("short write should not fail with SQLITE_BUSY");
+            }
+
+            database.pool.close().await;
+            remove_database_files(&database_path);
+        });
+    }
+
+    fn unique_test_database_path() -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+
+        std::env::temp_dir().join(format!("shendesk-sqlite-{nonce}.sqlite"))
+    }
+
+    fn remove_database_files(database_path: &Path) {
+        let _ = fs::remove_file(database_path);
+        let _ = fs::remove_file(database_path.with_extension("sqlite-wal"));
+        let _ = fs::remove_file(database_path.with_extension("sqlite-shm"));
     }
 }
