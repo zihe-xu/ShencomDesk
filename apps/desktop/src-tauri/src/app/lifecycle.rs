@@ -1,8 +1,11 @@
 use tauri::{AppHandle, Manager, RunEvent};
 
-use crate::infrastructure::{
-    database::service::DatabaseService,
-    logging::{self, LoggingGuards},
+use crate::{
+    app::state::AppState,
+    infrastructure::{
+        database::service::DatabaseService,
+        logging::{self, LoggingGuards},
+    },
 };
 
 /// Called once the Tauri runtime has registered shared state.
@@ -17,10 +20,14 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
     }
 }
 
-/// Coordinates persistent storage shutdown and log flushing before process exit.
+/// Coordinates background work, persistent storage shutdown, and log flushing before process exit.
 pub fn on_exit(app: &AppHandle) {
     tracing::info!("application shutdown requested");
     logging::record_operation("application.exit", "requested");
+
+    let cancelled_tasks = app.state::<AppState>().task_manager().shutdown();
+    tracing::info!(cancelled_tasks, "task manager stopped");
+    logging::record_operation("task_manager.shutdown", "success");
 
     let database = app.state::<DatabaseService>();
     match tauri::async_runtime::block_on(database.shutdown()) {

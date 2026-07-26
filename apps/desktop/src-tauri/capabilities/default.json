@@ -7,6 +7,10 @@
     "allow-health-check",
     "allow-get-config",
     "allow-save-config",
-    "allow-reset-config"
+    "allow-reset-config",
+    "allow-create-task",
+    "allow-get-task-status",
+    "allow-list-tasks",
+    "allow-cancel-task"
   ]
 }

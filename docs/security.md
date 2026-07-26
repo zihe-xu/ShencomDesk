@@ -22,6 +22,10 @@ ShenDesk 使用 Tauri 2 的 CSP、Permissions 与 Capabilities 建立 WebView �
 - `get_config`
 - `save_config`
 - `reset_config`
+- `create_task`
+- `get_task_status`
+- `list_tasks`
+- `cancel_task`
 
 Tauri 为这些命令生成对应的 allow/deny 权限。`capabilities/default.json` 仅把以下 allow 权限授予标签为 `main` 的窗口：
 
@@ -29,6 +33,10 @@ Tauri 为这些命令生成对应的 allow/deny 权限。`capabilities/default.j
 - `allow-get-config`
 - `allow-save-config`
 - `allow-reset-config`
+- `allow-create-task`
+- `allow-get-task-status`
+- `allow-list-tasks`
+- `allow-cancel-task`
 
 新增窗口默认不会获得这些权限。新增 IPC 命令时，必须同时更新：
 

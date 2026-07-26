@@ -3,6 +3,8 @@ export const IPC_ERROR_CODES = [
   "config_load_failed",
   "config_save_failed",
   "config_reset_failed",
+  "task_not_found",
+  "task_queue_unavailable",
   "validation_failed",
   "unknown_error",
 ] as const;
