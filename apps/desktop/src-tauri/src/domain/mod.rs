@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod config;
+
 pub mod user {
     use super::*;
 
@@ -36,18 +38,18 @@ pub mod health {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct HealthStatus {
-        pub status: &'static str,
-        pub app_name: &'static str,
-        pub version: &'static str,
+        pub status: String,
+        pub app_name: String,
+        pub version: String,
         pub uptime_seconds: u64,
     }
 
     impl HealthStatus {
         pub fn ready(uptime_seconds: u64) -> Self {
             Self {
-                status: "ready",
-                app_name: "ShenDesk",
-                version: env!("CARGO_PKG_VERSION"),
+                status: "ready".to_owned(),
+                app_name: "ShenDesk".to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
                 uptime_seconds,
             }
         }
