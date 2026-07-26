@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod config;
+pub mod task;
 
 pub mod user {
     use super::*;
@@ -23,13 +24,6 @@ pub mod document {
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
     pub struct DocumentId(pub String);
-}
-
-pub mod task {
-    use super::*;
-
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-    pub struct TaskId(pub String);
 }
 
 pub mod health {
