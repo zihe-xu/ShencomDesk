@@ -1,9 +1,6 @@
 //! External adapters. Concrete database, cache, file, network, and system integrations live here.
 
-pub mod database {
-    #[derive(Debug, Default)]
-    pub struct DatabaseAdapter;
-}
+pub mod database;
 
 pub mod cache {
     #[derive(Debug, Default)]
