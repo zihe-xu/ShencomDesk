@@ -163,7 +163,10 @@ mod tests {
             assert_eq!(foreign_keys, 1);
             assert_eq!(wal_autocheckpoint, i64::from(WAL_AUTOCHECKPOINT_PAGES));
 
-            database.shutdown().await.expect("database should shut down");
+            database
+                .shutdown()
+                .await
+                .expect("database should shut down");
             assert!(database.pool.is_closed());
             remove_database_files(&database_path);
         });
@@ -193,7 +196,10 @@ mod tests {
                     .expect("short write should not fail with SQLITE_BUSY");
             }
 
-            database.shutdown().await.expect("database should shut down");
+            database
+                .shutdown()
+                .await
+                .expect("database should shut down");
             assert!(database.pool.is_closed());
             remove_database_files(&database_path);
         });
