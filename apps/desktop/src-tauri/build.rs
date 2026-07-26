@@ -1,4 +1,13 @@
-const COMMANDS: &[&str] = &["health_check", "get_config", "save_config", "reset_config"];
+const COMMANDS: &[&str] = &[
+    "health_check",
+    "get_config",
+    "save_config",
+    "reset_config",
+    "create_task",
+    "get_task_status",
+    "list_tasks",
+    "cancel_task",
+];
 
 fn main() {
     tauri_build::try_build(
