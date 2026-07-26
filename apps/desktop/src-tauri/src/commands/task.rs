@@ -55,10 +55,7 @@ pub fn create_task(
 
 /// Returns the latest snapshot for one task.
 #[tauri::command]
-pub fn get_task_status(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> IpcResult<TaskSnapshot> {
+pub fn get_task_status(state: State<'_, AppState>, task_id: String) -> IpcResult<TaskSnapshot> {
     let task_id = parse_task_id(task_id)?;
 
     TaskService::get(state.task_manager(), &task_id)
@@ -79,10 +76,7 @@ pub fn list_tasks(state: State<'_, AppState>) -> Vec<TaskSnapshot> {
 
 /// Requests cooperative cancellation and immediately exposes the cancelled state.
 #[tauri::command]
-pub fn cancel_task(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> IpcResult<TaskSnapshot> {
+pub fn cancel_task(state: State<'_, AppState>, task_id: String) -> IpcResult<TaskSnapshot> {
     let task_id = parse_task_id(task_id)?;
 
     TaskService::cancel(state.task_manager(), &task_id)
