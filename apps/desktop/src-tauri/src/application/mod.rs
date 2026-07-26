@@ -2,6 +2,7 @@
 
 pub mod config_repository;
 pub mod config_service;
+pub mod task_service;
 
 pub mod health_service {
     use crate::domain::health::HealthStatus;
@@ -25,8 +26,4 @@ pub mod file_service {
 
 pub mod sync_service {
     pub struct SyncService;
-}
-
-pub mod task_service {
-    pub struct TaskService;
 }
