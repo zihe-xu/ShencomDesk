@@ -119,8 +119,8 @@ mod tests {
                 .await
                 .expect("recovered configuration should be readable")
                 .expect("recovered configuration should exist");
-            let persisted: AppConfig =
-                serde_json::from_str(&stored).expect("recovered configuration should be valid JSON");
+            let persisted: AppConfig = serde_json::from_str(&stored)
+                .expect("recovered configuration should be valid JSON");
             assert_eq!(persisted, AppConfig::default());
 
             assert!(

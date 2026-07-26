@@ -98,13 +98,14 @@ impl DatabaseService {
     #[cfg(test)]
     pub async fn has_config_key_prefix(&self, prefix: &str) -> Result<bool, AppError> {
         let pattern = format!("{prefix}%");
-        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM app_config WHERE key LIKE ?1")
-            .bind(pattern)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|error| {
-                AppError::new(format!("failed to inspect configuration backups: {error}"))
-            })?;
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM app_config WHERE key LIKE ?1")
+                .bind(pattern)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|error| {
+                    AppError::new(format!("failed to inspect configuration backups: {error}"))
+                })?;
 
         Ok(count > 0)
     }
