@@ -1,4 +1,4 @@
-use std::{fs, panic, path::Path};
+use std::{fs, panic, path::Path, sync::Mutex};
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
@@ -12,12 +12,31 @@ use crate::utils::AppError;
 
 pub const OPERATION_TARGET: &str = "shendesk::operation";
 
-/// Keeps non-blocking logging workers alive for the full application lifecycle.
 #[derive(Debug)]
-pub struct LoggingGuards {
+struct LoggingWorkers {
     _app: WorkerGuard,
     _error: WorkerGuard,
     _operation: WorkerGuard,
+}
+
+/// Keeps non-blocking logging workers alive for the full application lifecycle.
+#[derive(Debug)]
+pub struct LoggingGuards {
+    workers: Mutex<Option<LoggingWorkers>>,
+}
+
+impl LoggingGuards {
+    /// Drops worker guards so all buffered log events are flushed before process exit.
+    pub fn shutdown(&self) -> Result<(), AppError> {
+        let workers = self
+            .workers
+            .lock()
+            .map_err(|error| AppError::new(format!("failed to lock logging workers: {error}")))?
+            .take();
+        drop(workers);
+
+        Ok(())
+    }
 }
 
 /// Initializes structured logging under the provided application log directory.
@@ -76,9 +95,11 @@ pub fn initialize(log_dir: &Path) -> Result<LoggingGuards, AppError> {
     record_operation("logging.initialize", "success");
 
     Ok(LoggingGuards {
-        _app: app_guard,
-        _error: error_guard,
-        _operation: operation_guard,
+        workers: Mutex::new(Some(LoggingWorkers {
+            _app: app_guard,
+            _error: error_guard,
+            _operation: operation_guard,
+        })),
     })
 }
 

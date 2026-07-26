@@ -55,6 +55,17 @@ impl DatabaseService {
         Ok(Self { pool })
     }
 
+    pub async fn shutdown(&self) -> Result<(), AppError> {
+        let checkpoint_result = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .fetch_optional(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|error| AppError::new(format!("failed to checkpoint SQLite WAL: {error}")));
+
+        self.pool.close().await;
+        checkpoint_result
+    }
+
     async fn get_config_value(&self, key: &str) -> Result<Option<String>, AppError> {
         sqlx::query_scalar::<_, String>("SELECT value FROM app_config WHERE key = ?1")
             .bind(key)
@@ -152,7 +163,11 @@ mod tests {
             assert_eq!(foreign_keys, 1);
             assert_eq!(wal_autocheckpoint, i64::from(WAL_AUTOCHECKPOINT_PAGES));
 
-            database.pool.close().await;
+            database
+                .shutdown()
+                .await
+                .expect("database should shut down");
+            assert!(database.pool.is_closed());
             remove_database_files(&database_path);
         });
     }
@@ -181,7 +196,11 @@ mod tests {
                     .expect("short write should not fail with SQLITE_BUSY");
             }
 
-            database.pool.close().await;
+            database
+                .shutdown()
+                .await
+                .expect("database should shut down");
+            assert!(database.pool.is_closed());
             remove_database_files(&database_path);
         });
     }
