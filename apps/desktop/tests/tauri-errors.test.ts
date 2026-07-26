@@ -17,6 +17,17 @@ test("preserves known redacted IPC errors", () => {
   assert.equal(normalized.message, "本地数据服务暂时不可用，请重试。");
 });
 
+test("preserves stable task errors", () => {
+  const normalized = normalizeIpcError({
+    code: "task_not_found",
+    message: "未找到指定任务。",
+  });
+
+  assert.ok(normalized instanceof ShenDeskIpcError);
+  assert.equal(normalized.code, "task_not_found");
+  assert.equal(normalized.message, "未找到指定任务。");
+});
+
 test("redacts unknown objects and native errors", () => {
   const internalPath = "/Users/example/private/app.sqlite";
   const unknownPayload = normalizeIpcError({
