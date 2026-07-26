@@ -1,0 +1,8 @@
+{
+  "name": "shendesk",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  }
+}
