@@ -22,8 +22,10 @@ docs                项目文档
 
 ## 本地开发
 
+仓库提交 `package-lock.json` 与 `apps/desktop/src-tauri/Cargo.lock`，开发和 CI 使用相同的依赖解析结果。
+
 ```bash
-npm install
+npm ci
 npm run dev
 npm run tauri -- dev
 ```
@@ -33,6 +35,18 @@ npm run tauri -- dev
 ```bash
 npm run build
 npm run tauri -- build
+```
+
+## 质量验证
+
+Pull Request 与 `main` 分支由 GitHub Actions 自动执行：
+
+```bash
+npm ci
+npm run build
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 ```
 
 > Rust 与 Tauri 的平台依赖请参考 Tauri 官方环境配置文档。
