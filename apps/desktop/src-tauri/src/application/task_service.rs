@@ -545,7 +545,7 @@ mod tests {
         let created = manager
             .submit("long running", 100, |context| {
                 while !context.is_cancelled() {
-                    std::thread::sleep(Duration::from_millis(2));
+                    thread::sleep(Duration::from_millis(2));
                 }
                 Ok(())
             })
@@ -583,7 +583,7 @@ mod tests {
                 return snapshot;
             }
             assert!(Instant::now() < deadline, "task state transition timed out");
-            std::thread::sleep(Duration::from_millis(5));
+            thread::sleep(Duration::from_millis(5));
         }
     }
 }
