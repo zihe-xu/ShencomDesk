@@ -14,6 +14,10 @@ pub fn run() {
             crate::commands::config::get_config,
             crate::commands::config::save_config,
             crate::commands::config::reset_config,
+            crate::commands::task::create_task,
+            crate::commands::task::get_task_status,
+            crate::commands::task::list_tasks,
+            crate::commands::task::cancel_task,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ShenDesk");
