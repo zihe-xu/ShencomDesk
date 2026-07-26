@@ -1,5 +1,6 @@
 //! Use-case orchestration. Application services coordinate domain behavior.
 
+pub mod config_repository;
 pub mod config_service;
 
 pub mod health_service {

@@ -19,7 +19,7 @@
 
 1. 应用启动时创建应用数据目录和 SQLite 数据库。
 2. SQLx 自动执行 `src/infrastructure/database/migrations` 中的迁移。
-3. `ConfigService::load` 读取 `app.settings`。
+3. `ConfigService::load` 通过 `ConfigRepository` 读取 `app.settings`。
 4. 配置缺失时写入默认值。
 5. 旧配置会升级到当前 `schemaVersion`，升级结果会自动回写。
 6. 不支持的主题和空语言值会被归一化。
@@ -40,6 +40,7 @@
 ## 分层约束
 
 - Command 层不直接访问 SQLite。
-- Application 层通过 `ConfigService` 编排配置用例。
+- Application 层定义 `ConfigRepository` 并通过 `ConfigService` 编排配置用例。
 - Domain 层定义 `AppConfig` 和迁移规则。
-- Infrastructure 层通过 `DatabaseService` 执行 SQLx 查询。
+- Infrastructure 层的 `DatabaseService` 实现 `ConfigRepository`，通过 SQLx 执行查询。
+- ConfigService 单元测试使用内存仓储，不依赖 SQLite 或 Tauri State。

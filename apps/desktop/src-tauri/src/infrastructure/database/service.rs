@@ -5,13 +5,16 @@ use sqlx::{
     SqlitePool,
 };
 
-use crate::utils::AppError;
+use crate::{
+    application::config_repository::{ConfigRepository, ConfigRepositoryFuture},
+    utils::AppError,
+};
 
 const DATABASE_MAX_CONNECTIONS: u32 = 5;
 const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const WAL_AUTOCHECKPOINT_PAGES: u32 = 1_000;
 
-/// SQLite access boundary used by application services.
+/// SQLx/SQLite adapter for application-owned persistence ports.
 #[derive(Debug, Clone)]
 pub struct DatabaseService {
     pool: SqlitePool,
@@ -52,7 +55,7 @@ impl DatabaseService {
         Ok(Self { pool })
     }
 
-    pub async fn get_config_value(&self, key: &str) -> Result<Option<String>, AppError> {
+    async fn get_config_value(&self, key: &str) -> Result<Option<String>, AppError> {
         sqlx::query_scalar::<_, String>("SELECT value FROM app_config WHERE key = ?1")
             .bind(key)
             .fetch_optional(&self.pool)
@@ -62,7 +65,7 @@ impl DatabaseService {
             })
     }
 
-    pub async fn set_config_value(&self, key: &str, value: &str) -> Result<(), AppError> {
+    async fn set_config_value(&self, key: &str, value: &str) -> Result<(), AppError> {
         sqlx::query(
             r#"
             INSERT INTO app_config (key, value, updated_at)
@@ -81,7 +84,7 @@ impl DatabaseService {
         Ok(())
     }
 
-    pub async fn delete_config_value(&self, key: &str) -> Result<(), AppError> {
+    async fn delete_config_value(&self, key: &str) -> Result<(), AppError> {
         sqlx::query("DELETE FROM app_config WHERE key = ?1")
             .bind(key)
             .execute(&self.pool)
@@ -92,31 +95,19 @@ impl DatabaseService {
 
         Ok(())
     }
+}
 
-    #[cfg(test)]
-    pub async fn connect_in_memory() -> Result<Self, AppError> {
-        let options = SqliteConnectOptions::new()
-            .filename(":memory:")
-            .create_if_missing(true)
-            .foreign_keys(true)
-            .busy_timeout(DATABASE_BUSY_TIMEOUT);
-
-        Self::connect_with_options(options, 1).await
+impl ConfigRepository for DatabaseService {
+    fn get<'a>(&'a self, key: &'a str) -> ConfigRepositoryFuture<'a, Option<String>> {
+        Box::pin(async move { self.get_config_value(key).await })
     }
 
-    #[cfg(test)]
-    pub async fn has_config_key_prefix(&self, prefix: &str) -> Result<bool, AppError> {
-        let pattern = format!("{prefix}%");
-        let count =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM app_config WHERE key LIKE ?1")
-                .bind(pattern)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|error| {
-                    AppError::new(format!("failed to inspect configuration backups: {error}"))
-                })?;
+    fn set<'a>(&'a self, key: &'a str, value: &'a str) -> ConfigRepositoryFuture<'a, ()> {
+        Box::pin(async move { self.set_config_value(key, value).await })
+    }
 
-        Ok(count > 0)
+    fn delete<'a>(&'a self, key: &'a str) -> ConfigRepositoryFuture<'a, ()> {
+        Box::pin(async move { self.delete_config_value(key).await })
     }
 }
 
