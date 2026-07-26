@@ -1,9 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use sqlx::{
-    sqlite::{
-        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
-    },
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     SqlitePool,
 };
 
@@ -136,11 +134,10 @@ mod tests {
                 .await
                 .expect("file database should initialize");
 
-            let journal_mode =
-                sqlx::query_scalar::<_, String>("PRAGMA journal_mode")
-                    .fetch_one(&database.pool)
-                    .await
-                    .expect("journal mode should be readable");
+            let journal_mode = sqlx::query_scalar::<_, String>("PRAGMA journal_mode")
+                .fetch_one(&database.pool)
+                .await
+                .expect("journal mode should be readable");
             let synchronous = sqlx::query_scalar::<_, i64>("PRAGMA synchronous")
                 .fetch_one(&database.pool)
                 .await
@@ -153,11 +150,10 @@ mod tests {
                 .fetch_one(&database.pool)
                 .await
                 .expect("foreign key mode should be readable");
-            let wal_autocheckpoint =
-                sqlx::query_scalar::<_, i64>("PRAGMA wal_autocheckpoint")
-                    .fetch_one(&database.pool)
-                    .await
-                    .expect("WAL checkpoint threshold should be readable");
+            let wal_autocheckpoint = sqlx::query_scalar::<_, i64>("PRAGMA wal_autocheckpoint")
+                .fetch_one(&database.pool)
+                .await
+                .expect("WAL checkpoint threshold should be readable");
 
             assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
             assert_eq!(synchronous, 1, "NORMAL synchronous mode should be active");
