@@ -9,6 +9,8 @@ pub enum IpcErrorCode {
     ConfigLoadFailed,
     ConfigSaveFailed,
     ConfigResetFailed,
+    TaskNotFound,
+    TaskQueueUnavailable,
     ValidationFailed,
     UnknownError,
 }
@@ -32,6 +34,17 @@ impl IpcError {
 
     pub fn for_config_reset(error: &AppError) -> Self {
         Self::from_app_error(error, IpcErrorCode::ConfigResetFailed)
+    }
+
+    pub fn task_not_found() -> Self {
+        Self::new(IpcErrorCode::TaskNotFound, "未找到指定任务。")
+    }
+
+    pub fn task_queue_unavailable() -> Self {
+        Self::new(
+            IpcErrorCode::TaskQueueUnavailable,
+            "后台任务服务暂时不可用，请重试。",
+        )
     }
 
     pub fn validation() -> Self {
@@ -108,5 +121,16 @@ mod tests {
             IpcError::for_config_reset(&internal).code,
             IpcErrorCode::ConfigResetFailed
         );
+    }
+
+    #[test]
+    fn exposes_stable_task_errors_without_internal_details() {
+        let not_found = IpcError::task_not_found();
+        let unavailable = IpcError::task_queue_unavailable();
+
+        assert_eq!(not_found.code, IpcErrorCode::TaskNotFound);
+        assert_eq!(unavailable.code, IpcErrorCode::TaskQueueUnavailable);
+        assert_eq!(not_found.message, "未找到指定任务。");
+        assert_eq!(unavailable.message, "后台任务服务暂时不可用，请重试。");
     }
 }
