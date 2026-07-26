@@ -43,7 +43,9 @@ impl DatabaseService {
             .max_connections(max_connections)
             .connect_with(options)
             .await
-            .map_err(|error| AppError::database(format!("failed to open SQLite database: {error}")))?;
+            .map_err(|error| {
+                AppError::database(format!("failed to open SQLite database: {error}"))
+            })?;
 
         sqlx::migrate!("./src/infrastructure/database/migrations")
             .run(&pool)
