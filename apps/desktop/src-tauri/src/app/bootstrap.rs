@@ -4,10 +4,7 @@ use tauri::{App, Manager};
 
 use crate::{
     application::config_service::ConfigService,
-    infrastructure::{
-        database::service::DatabaseService,
-        logging,
-    },
+    infrastructure::{database::service::DatabaseService, logging},
 };
 
 use super::{lifecycle, state::AppState};

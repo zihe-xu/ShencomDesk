@@ -1,9 +1,7 @@
 use tauri::State;
 
 use crate::{
-    app::state::AppState,
-    application::health_service::HealthService,
-    domain::health::HealthStatus,
+    app::state::AppState, application::health_service::HealthService, domain::health::HealthStatus,
 };
 
 /// Returns the desktop runtime health snapshot.

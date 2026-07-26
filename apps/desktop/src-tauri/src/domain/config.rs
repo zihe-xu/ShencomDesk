@@ -64,10 +64,9 @@ mod tests {
 
     #[test]
     fn migrates_legacy_configuration_without_schema_version() {
-        let legacy: AppConfig = serde_json::from_str(
-            r#"{"theme":"light","language":"en-US","autoStart":false}"#,
-        )
-        .expect("legacy configuration should deserialize");
+        let legacy: AppConfig =
+            serde_json::from_str(r#"{"theme":"light","language":"en-US","autoStart":false}"#)
+                .expect("legacy configuration should deserialize");
 
         let migrated = legacy.migrate();
 

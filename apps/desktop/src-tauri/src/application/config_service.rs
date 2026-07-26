@@ -1,7 +1,5 @@
 use crate::{
-    domain::config::AppConfig,
-    infrastructure::database::service::DatabaseService,
-    utils::AppError,
+    domain::config::AppConfig, infrastructure::database::service::DatabaseService, utils::AppError,
 };
 
 const APP_CONFIG_KEY: &str = "app.settings";
@@ -17,8 +15,11 @@ impl ConfigService {
             return Ok(defaults);
         };
 
-        let stored: AppConfig = serde_json::from_str(&raw_config)
-            .map_err(|error| AppError::new(format!("failed to parse application configuration: {error}")))?;
+        let stored: AppConfig = serde_json::from_str(&raw_config).map_err(|error| {
+            AppError::new(format!(
+                "failed to parse application configuration: {error}"
+            ))
+        })?;
         let migrated = stored.clone().migrate();
 
         if migrated != stored {
@@ -33,8 +34,11 @@ impl ConfigService {
         config: &AppConfig,
     ) -> Result<AppConfig, AppError> {
         let normalized = config.clone().migrate();
-        let serialized = serde_json::to_string_pretty(&normalized)
-            .map_err(|error| AppError::new(format!("failed to serialize application configuration: {error}")))?;
+        let serialized = serde_json::to_string_pretty(&normalized).map_err(|error| {
+            AppError::new(format!(
+                "failed to serialize application configuration: {error}"
+            ))
+        })?;
 
         database
             .set_config_value(APP_CONFIG_KEY, &serialized)

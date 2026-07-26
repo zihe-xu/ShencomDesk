@@ -8,7 +8,7 @@ pub mod utils;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|tauri_app| crate::app::bootstrap::initialize(tauri_app))
+        .setup(crate::app::bootstrap::initialize)
         .invoke_handler(tauri::generate_handler![
             crate::commands::health::health_check,
             crate::commands::config::get_config,
