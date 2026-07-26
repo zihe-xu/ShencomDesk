@@ -1,11 +1,15 @@
 use tauri::AppHandle;
 
+use crate::infrastructure::logging;
+
 /// Called once the Tauri runtime has registered shared state.
 pub fn on_ready(_app: &AppHandle) {
-    // Lifecycle subscribers will be connected here as capabilities are added.
+    tracing::info!("application runtime ready");
+    logging::record_operation("application.ready", "success");
 }
 
 /// Reserved for coordinated shutdown and resource cleanup.
 pub fn on_exit() {
-    // Database pools, background tasks, and plugin runtimes will close here.
+    tracing::info!("application shutdown requested");
+    logging::record_operation("application.exit", "success");
 }
