@@ -105,7 +105,8 @@ impl TaskContext {
             return false;
         };
 
-        if record.snapshot.state != TaskState::Running || record.cancellation.load(Ordering::Acquire)
+        if record.snapshot.state != TaskState::Running
+            || record.cancellation.load(Ordering::Acquire)
         {
             return false;
         }
@@ -180,8 +181,8 @@ impl TaskManager {
             job: Box::new(job),
         };
 
-        let sender = lock_mutex(&self.sender);
-        let Some(sender) = sender.as_ref() else {
+        let sender_guard = lock_mutex(&self.sender);
+        let Some(sender) = sender_guard.as_ref() else {
             return Err(TaskManagerError::QueueUnavailable);
         };
 
@@ -193,11 +194,13 @@ impl TaskManager {
             },
         );
 
-        if sender.try_send(queued).is_err() {
+        let send_result = sender.try_send(queued);
+        drop(sender_guard);
+
+        if send_result.is_err() {
             write_records(&self.tasks).remove(&id);
             return Err(TaskManagerError::QueueUnavailable);
         }
-        drop(sender);
 
         Ok(self.get(&id).unwrap_or(snapshot))
     }
@@ -419,7 +422,9 @@ fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn read_records(records: &RwLock<BTreeMap<TaskId, TaskRecord>>) -> RwLockReadGuard<'_, BTreeMap<TaskId, TaskRecord>> {
+fn read_records(
+    records: &RwLock<BTreeMap<TaskId, TaskRecord>>,
+) -> RwLockReadGuard<'_, BTreeMap<TaskId, TaskRecord>> {
     records
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -463,8 +468,14 @@ mod tests {
             })
             .expect("second task should be queued");
 
-        assert_eq!(wait_for_terminal(&manager, &first.id).state, TaskState::Success);
-        assert_eq!(wait_for_terminal(&manager, &second.id).state, TaskState::Success);
+        assert_eq!(
+            wait_for_terminal(&manager, &first.id).state,
+            TaskState::Success
+        );
+        assert_eq!(
+            wait_for_terminal(&manager, &second.id).state,
+            TaskState::Success
+        );
         assert_eq!(*lock_mutex(&order), vec![1, 2]);
     }
 
@@ -556,7 +567,11 @@ mod tests {
         );
     }
 
-    fn wait_for_state(manager: &TaskManager, id: &TaskId, expected: TaskState) -> TaskSnapshot {
+    fn wait_for_state(
+        manager: &TaskManager,
+        id: &TaskId,
+        expected: TaskState,
+    ) -> TaskSnapshot {
         wait_for(manager, id, |snapshot| snapshot.state == expected)
     }
 
@@ -575,7 +590,10 @@ mod tests {
             if predicate(&snapshot) {
                 return snapshot;
             }
-            assert!(Instant::now() < deadline, "task state transition timed out");
+            assert!(
+                Instant::now() < deadline,
+                "task state transition timed out"
+            );
             thread::sleep(Duration::from_millis(5));
         }
     }
