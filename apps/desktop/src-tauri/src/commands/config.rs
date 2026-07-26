@@ -14,10 +14,7 @@ use super::error::{IpcError, IpcResult};
 pub async fn get_config(database: State<'_, DatabaseService>) -> IpcResult<AppConfig> {
     ConfigService::load(database.inner())
         .await
-        .map(|config| {
-            logging::record_operation("ipc.config.get", "success");
-            config
-        })
+        .inspect(|_| logging::record_operation("ipc.config.get", "success"))
         .map_err(|error| map_config_error("ipc.config.get", error))
 }
 
@@ -29,10 +26,7 @@ pub async fn save_config(
 ) -> IpcResult<AppConfig> {
     ConfigService::save(database.inner(), &config)
         .await
-        .map(|saved| {
-            logging::record_operation("ipc.config.save", "success");
-            saved
-        })
+        .inspect(|_| logging::record_operation("ipc.config.save", "success"))
         .map_err(|error| map_config_error("ipc.config.save", error))
 }
 
@@ -41,10 +35,7 @@ pub async fn save_config(
 pub async fn reset_config(database: State<'_, DatabaseService>) -> IpcResult<AppConfig> {
     ConfigService::reset(database.inner())
         .await
-        .map(|config| {
-            logging::record_operation("ipc.config.reset", "success");
-            config
-        })
+        .inspect(|_| logging::record_operation("ipc.config.reset", "success"))
         .map_err(|error| map_config_error("ipc.config.reset", error))
 }
 
