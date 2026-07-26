@@ -1,5 +1,7 @@
 //! Use-case orchestration. Application services coordinate domain behavior.
 
+pub mod config_service;
+
 pub mod health_service {
     use crate::domain::health::HealthStatus;
 
