@@ -43,13 +43,13 @@ impl DatabaseService {
             .max_connections(max_connections)
             .connect_with(options)
             .await
-            .map_err(|error| AppError::new(format!("failed to open SQLite database: {error}")))?;
+            .map_err(|error| AppError::database(format!("failed to open SQLite database: {error}")))?;
 
         sqlx::migrate!("./src/infrastructure/database/migrations")
             .run(&pool)
             .await
             .map_err(|error| {
-                AppError::new(format!("failed to run database migrations: {error}"))
+                AppError::database(format!("failed to run database migrations: {error}"))
             })?;
 
         Ok(Self { pool })
@@ -60,7 +60,9 @@ impl DatabaseService {
             .fetch_optional(&self.pool)
             .await
             .map(|_| ())
-            .map_err(|error| AppError::new(format!("failed to checkpoint SQLite WAL: {error}")));
+            .map_err(|error| {
+                AppError::database(format!("failed to checkpoint SQLite WAL: {error}"))
+            });
 
         self.pool.close().await;
         checkpoint_result
@@ -72,7 +74,7 @@ impl DatabaseService {
             .fetch_optional(&self.pool)
             .await
             .map_err(|error| {
-                AppError::new(format!("failed to read configuration '{key}': {error}"))
+                AppError::database(format!("failed to read configuration '{key}': {error}"))
             })
     }
 
@@ -90,7 +92,9 @@ impl DatabaseService {
         .bind(value)
         .execute(&self.pool)
         .await
-        .map_err(|error| AppError::new(format!("failed to save configuration '{key}': {error}")))?;
+        .map_err(|error| {
+            AppError::database(format!("failed to save configuration '{key}': {error}"))
+        })?;
 
         Ok(())
     }
@@ -101,7 +105,7 @@ impl DatabaseService {
             .execute(&self.pool)
             .await
             .map_err(|error| {
-                AppError::new(format!("failed to delete configuration '{key}': {error}"))
+                AppError::database(format!("failed to delete configuration '{key}': {error}"))
             })?;
 
         Ok(())
