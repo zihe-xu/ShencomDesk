@@ -21,8 +21,15 @@ impl DatabaseService {
             .create_if_missing(true)
             .foreign_keys(true);
 
+        Self::connect_with_options(options, 5).await
+    }
+
+    async fn connect_with_options(
+        options: SqliteConnectOptions,
+        max_connections: u32,
+    ) -> Result<Self, AppError> {
         let pool = SqlitePoolOptions::new()
-            .max_connections(5)
+            .max_connections(max_connections)
             .connect_with(options)
             .await
             .map_err(|error| AppError::new(format!("failed to open SQLite database: {error}")))?;
@@ -76,5 +83,29 @@ impl DatabaseService {
             })?;
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub async fn connect_in_memory() -> Result<Self, AppError> {
+        let options = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true)
+            .foreign_keys(true);
+
+        Self::connect_with_options(options, 1).await
+    }
+
+    #[cfg(test)]
+    pub async fn has_config_key_prefix(&self, prefix: &str) -> Result<bool, AppError> {
+        let pattern = format!("{prefix}%");
+        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM app_config WHERE key LIKE ?1")
+            .bind(pattern)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|error| {
+                AppError::new(format!("failed to inspect configuration backups: {error}"))
+            })?;
+
+        Ok(count > 0)
     }
 }
