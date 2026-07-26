@@ -28,6 +28,7 @@ pub struct CreateTaskRequest {
     step_delay_ms: u64,
 }
 
+#[derive(Debug)]
 struct ValidatedTaskRequest {
     name: String,
     total_steps: u64,
