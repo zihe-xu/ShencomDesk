@@ -58,9 +58,8 @@ pub fn initialize(log_dir: &Path) -> Result<LoggingGuards, AppError> {
 
     let environment_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let app_filter = environment_filter.and(filter_fn(|metadata| {
-        metadata.target() != OPERATION_TARGET
-    }));
+    let app_filter =
+        environment_filter.and(filter_fn(|metadata| metadata.target() != OPERATION_TARGET));
 
     let app_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
