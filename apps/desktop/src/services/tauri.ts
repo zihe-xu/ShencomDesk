@@ -1,12 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export const IPC_ERROR_CODES = [
+  "database_unavailable",
+  "config_load_failed",
+  "config_save_failed",
+  "config_reset_failed",
+  "validation_failed",
+  "unknown_error",
+] as const;
+
+export type IpcErrorCode = (typeof IPC_ERROR_CODES)[number];
+
 export interface IpcErrorPayload {
-  code: string;
+  code: IpcErrorCode;
   message: string;
 }
 
 export class ShenDeskIpcError extends Error {
-  readonly code: string;
+  readonly code: IpcErrorCode;
 
   constructor(payload: IpcErrorPayload) {
     super(payload.message);
@@ -26,14 +37,14 @@ export async function invokeCommand<T>(
   }
 }
 
-function normalizeIpcError(error: unknown): ShenDeskIpcError {
+export function normalizeIpcError(error: unknown): ShenDeskIpcError {
   if (isIpcErrorPayload(error)) {
     return new ShenDeskIpcError(error);
   }
 
   return new ShenDeskIpcError({
     code: "unknown_error",
-    message: error instanceof Error ? error.message : String(error),
+    message: "操作失败，请重试。",
   });
 }
 
@@ -43,5 +54,16 @@ function isIpcErrorPayload(value: unknown): value is IpcErrorPayload {
   }
 
   const candidate = value as Record<string, unknown>;
-  return typeof candidate.code === "string" && typeof candidate.message === "string";
+  return (
+    isIpcErrorCode(candidate.code) &&
+    typeof candidate.message === "string" &&
+    candidate.message.length > 0
+  );
+}
+
+function isIpcErrorCode(value: unknown): value is IpcErrorCode {
+  return (
+    typeof value === "string" &&
+    (IPC_ERROR_CODES as readonly string[]).includes(value)
+  );
 }
