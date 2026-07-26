@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for the ShenDesk main window",
+  "description": "Least-privilege IPC capability for the ShenDesk main window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "allow-health-check",
+    "allow-get-config",
+    "allow-save-config",
+    "allow-reset-config"
+  ]
 }
