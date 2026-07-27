@@ -11,12 +11,13 @@ function validInput(overrides = {}) {
   return {
     rootPackage: { version: "1.2.3" },
     desktopPackage: { version: "1.2.3" },
-    cargoToml: '[package]\nname = "shendesk"\nversion = "1.2.3"\n\n[dependencies]\n',
+    cargoToml:
+      '[package]\nname = "shendesk"\nversion = "1.2.3"\n\n[dependencies]\n',
     tauriConfig: { version: "1.2.3", bundle: {} },
     releaseConfig: { bundle: { createUpdaterArtifacts: true } },
     tagName: "v1.2.3",
     publicKey: "public-key",
-    privateKey: "private-key",
+    privateKeyConfigured: true,
     ...overrides,
   };
 }
@@ -62,7 +63,10 @@ test("fails closed when signing material is missing", () => {
     /SHENDESK_UPDATER_PUBLIC_KEY is not configured/,
   );
   assert.throws(
-    () => validateReleaseConfiguration(validInput({ privateKey: "  " })),
+    () =>
+      validateReleaseConfiguration(
+        validInput({ privateKeyConfigured: false }),
+      ),
     /TAURI_SIGNING_PRIVATE_KEY is not configured/,
   );
 });
@@ -72,7 +76,10 @@ test("keeps updater artifact generation release-only", () => {
     () =>
       validateReleaseConfiguration(
         validInput({
-          tauriConfig: { version: "1.2.3", bundle: { createUpdaterArtifacts: true } },
+          tauriConfig: {
+            version: "1.2.3",
+            bundle: { createUpdaterArtifacts: true },
+          },
         }),
       ),
     /base Tauri config must not require updater artifacts/,
@@ -86,7 +93,7 @@ test("keeps updater artifact generation release-only", () => {
   );
 });
 
-test("release workflow is tag-only and receives keys without printing them", async () => {
+test("release workflow is tag-only and minimizes signing-key exposure", async () => {
   const workflow = await readFile(
     new URL("../workflows/release.yml", import.meta.url),
     "utf8",
@@ -94,13 +101,22 @@ test("release workflow is tag-only and receives keys without printing them", asy
 
   assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
   assert.doesNotMatch(workflow, /pull_request:/);
+  assert.match(workflow, /permissions:\s*\n\s*contents: read/);
+  assert.match(
+    workflow,
+    /release:[\s\S]*?permissions:\s*\n\s*contents: write/,
+  );
   assert.match(
     workflow,
     /SHENDESK_UPDATER_PUBLIC_KEY: \$\{\{ vars\.SHENDESK_UPDATER_PUBLIC_KEY \}\}/,
   );
   assert.match(
     workflow,
-    /TAURI_SIGNING_PRIVATE_KEY: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}/,
+    /TAURI_SIGNING_PRIVATE_KEY_CONFIGURED: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY != '' \}\}/,
+  );
+  assert.equal(
+    [...workflow.matchAll(/^\s*TAURI_SIGNING_PRIVATE_KEY:\s/gm)].length,
+    1,
   );
   assert.match(
     workflow,
