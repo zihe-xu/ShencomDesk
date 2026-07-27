@@ -78,6 +78,8 @@ console.log(result.content, result.fromCache);
 - 多个独立 watch registration
 - 通过 watch ID 显式停止
 
+监听适配器在第三方回调边界显式接收 `notify::Result<notify::Event>`，将平台事件转换为稳定的 Domain 事件，不向上层泄漏 `notify` 类型。
+
 每个变更会发布 Domain 事件：
 
 ```json
