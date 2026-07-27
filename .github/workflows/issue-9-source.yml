@@ -1,33 +1,13 @@
-name: Issue 9 source artifact
+name: Issue 9 patch staging
 
 on:
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  export:
-    name: Export working tree
+  idle:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Upload source tree
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-9-source
-          path: |
-            apps
-            docs
-            packages
-            package.json
-            package-lock.json
-            README.md
-            .github/workflows/ci.yml
-          include-hidden-files: true
-          if-no-files-found: error
+      - run: echo "Issue 9 patch parts are being staged"
