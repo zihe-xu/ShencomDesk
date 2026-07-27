@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="ShenDesk application icon">
+  <defs>
+    <linearGradient id="background" x1="120" y1="96" x2="904" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb" />
+      <stop offset="1" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#background)" />
+  <path
+    d="M704 330C660 278 596 248 516 248C404 248 326 306 326 392C326 482 400 516 506 542C588 562 628 578 628 620C628 660 590 684 522 684C446 684 386 656 338 598"
+    fill="none"
+    stroke="#ffffff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="112"
+  />
+</svg>
