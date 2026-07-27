@@ -58,3 +58,7 @@ Publisher → EventBus (tokio broadcast) → Subscriber(s)
 ```
 
 EventBus 支持独立多订阅者、按 `EventKind` 过滤、单调 sequence 以及慢订阅者 lag 检测。它只用于进程内通知；需要跨重启恢复的状态仍由 SQLite 持久化。详见 `docs/event-bus.md`。
+
+## 文件服务依赖倒置
+
+`application::file_service::FileRepository` 定义读取、索引、监听、缓存失效和关闭能力。`LocalFileRepository` 位于 Infrastructure 层，使用 `std::fs`、`notify` 和 `moka` 实现；Tauri Command 只调用 `FileService`。详见 `docs/file-service.md`。

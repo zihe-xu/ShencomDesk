@@ -31,6 +31,10 @@ pub fn on_exit(app: &AppHandle) {
 
     let state = app.state::<AppState>();
     state.event_bus().publish(AppEvent::ApplicationExiting);
+    let stopped_watches = state.file_service().shutdown();
+    tracing::info!(stopped_watches, "file service stopped");
+    logging::record_operation("file_service.shutdown", "success");
+
     let cancelled_tasks = state.task_manager().shutdown();
     tracing::info!(cancelled_tasks, "task manager stopped");
     logging::record_operation("task_manager.shutdown", "success");

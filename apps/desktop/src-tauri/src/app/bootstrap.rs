@@ -1,10 +1,12 @@
-use std::fs;
+use std::{fs, sync::Arc};
 
 use tauri::{App, Manager};
 
 use crate::{
     application::config_service::ConfigService,
-    infrastructure::{database::service::DatabaseService, logging},
+    infrastructure::{
+        database::service::DatabaseService, filesystem::LocalFileRepository, logging,
+    },
 };
 
 use super::{lifecycle, state::AppState};
@@ -36,7 +38,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     logging::record_operation("config.load", "success");
 
     app.manage(database);
-    app.manage(AppState::new());
+    app.manage(AppState::new(Arc::new(LocalFileRepository::default())));
     lifecycle::on_ready(app.handle());
 
     Ok(())

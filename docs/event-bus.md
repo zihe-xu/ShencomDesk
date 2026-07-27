@@ -59,7 +59,11 @@ Domain 事件不依赖 Tauri、Tokio 或具体基础设施，因此发布方和�
 use crate::domain::event::AppEvent;
 
 state.event_bus().publish(AppEvent::FileChanged {
-    path: path.to_string_lossy().into_owned(),
+    change: FileChange {
+        watch_id,
+        path: path.to_string_lossy().into_owned(),
+        kind: FileChangeKind::Modified,
+    },
 });
 ```
 
@@ -128,7 +132,7 @@ task_finished (success / failed / cancelled)
 
 - 完成共享状态注册后发布 `application_ready`
 - 开始退出清理时发布 `application_exiting`
-- 随后 TaskManager 取消非终态任务并发布对应 `task_finished`
+- 随后 FileService 停止 watcher，TaskManager 取消非终态任务并发布对应 `task_finished`
 
 EventBus 是进程内通信设施；应用退出后事件不会保留。需要跨重启恢复的数据必须写入 SQLite。
 
@@ -152,3 +156,7 @@ EventBus 是进程内通信设施；应用退出后事件不会保留。需要�
 - Event wire format
 - TaskManager 生命周期事件顺序
 - AppState 中 TaskManager 与其他模块共享同一 EventBus
+
+## FileService 集成
+
+FileService 的 `notify` adapter 把平台变更归一化为 `FileChange`，由 Application 层发布 `file_changed`。事件只表示当前状态可能变化；订阅者应重新读取或重建索引，不能把 EventBus 当作持久化文件审计流。

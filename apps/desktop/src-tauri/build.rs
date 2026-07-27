@@ -7,6 +7,11 @@ const COMMANDS: &[&str] = &[
     "get_task_status",
     "list_tasks",
     "cancel_task",
+    "read_text_file",
+    "index_files",
+    "start_file_watch",
+    "stop_file_watch",
+    "clear_file_cache",
 ];
 
 fn main() {

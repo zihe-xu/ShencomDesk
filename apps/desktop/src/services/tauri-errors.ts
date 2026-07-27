@@ -5,6 +5,13 @@ export const IPC_ERROR_CODES = [
   "config_reset_failed",
   "task_not_found",
   "task_queue_unavailable",
+  "file_not_found",
+  "file_access_denied",
+  "file_too_large",
+  "file_not_text",
+  "file_watch_unavailable",
+  "file_watch_not_found",
+  "file_operation_failed",
   "validation_failed",
   "unknown_error",
 ] as const;
