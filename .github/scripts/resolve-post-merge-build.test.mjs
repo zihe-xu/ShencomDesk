@@ -103,7 +103,7 @@ test("merged PR without merge_commit_sha fails closed", () => {
   assert.match(decision.reason, /merge_commit_sha/);
 });
 
-test("workflow pins the Windows runner and retains failed build diagnostics", () => {
+test("workflow pins Windows and captures native build diagnostics", () => {
   const workflow = readFileSync(
     new URL("../workflows/build.yml", import.meta.url),
     "utf8",
@@ -111,7 +111,28 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
 
   assert.match(workflow, /runner:\s+windows-2022/);
   assert.doesNotMatch(workflow, /runner:\s+windows-latest/);
-  assert.match(workflow, /run-tauri-build\.mjs/);
+  assert.match(workflow, /npm run tauri -- icon app-icon\.svg/);
+  assert.match(workflow, /tee tauri-build\.log/);
+  assert.match(workflow, /Tee-Object -FilePath \$logPath/);
+  assert.doesNotMatch(workflow, /run-tauri-build\.mjs/);
   assert.match(workflow, /Upload failed build diagnostics/);
+  assert.match(workflow, /if-no-files-found:\s+error/);
   assert.match(workflow, /retention-days:\s+7/);
+});
+
+test("Tauri bundle declares every generated desktop icon format", () => {
+  const config = JSON.parse(
+    readFileSync(
+      new URL("../../apps/desktop/src-tauri/tauri.conf.json", import.meta.url),
+      "utf8",
+    ),
+  );
+
+  assert.deepEqual(config.bundle.icon, [
+    "icons/32x32.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/icon.icns",
+    "icons/icon.ico",
+  ]);
 });
