@@ -11,7 +11,13 @@ use std::{
 
 use tauri::async_runtime::{channel, spawn, spawn_blocking, Mutex as AsyncMutex, Receiver, Sender};
 
-use crate::domain::task::{TaskId, TaskSnapshot, TaskState};
+use crate::{
+    application::event_bus::EventBus,
+    domain::{
+        event::AppEvent,
+        task::{TaskId, TaskSnapshot, TaskState},
+    },
+};
 
 const DEFAULT_QUEUE_CAPACITY: usize = 128;
 const DEFAULT_WORKER_COUNT: usize = 2;
@@ -80,6 +86,7 @@ pub struct TaskContext {
     id: TaskId,
     tasks: TaskRecords,
     cancellation: Arc<AtomicBool>,
+    events: EventBus,
 }
 
 impl TaskContext {
@@ -98,18 +105,24 @@ impl TaskContext {
             return false;
         }
 
-        let mut tasks = write_records(&self.tasks);
-        let Some(record) = tasks.get_mut(&self.id) else {
-            return false;
-        };
-
-        if record.snapshot.state != TaskState::Running
-            || record.cancellation.load(Ordering::Acquire)
         {
-            return false;
+            let mut tasks = write_records(&self.tasks);
+            let Some(record) = tasks.get_mut(&self.id) else {
+                return false;
+            };
+
+            if record.snapshot.state != TaskState::Running
+                || record.cancellation.load(Ordering::Acquire)
+            {
+                return false;
+            }
+
+            record.snapshot.progress.update(completed);
+            let snapshot = record.snapshot.clone();
+            self.events
+                .publish(AppEvent::TaskProgressed { task: snapshot });
         }
 
-        record.snapshot.progress.update(completed);
         true
     }
 }
@@ -118,6 +131,7 @@ pub struct TaskManager {
     sender: Mutex<Option<Sender<QueuedTask>>>,
     tasks: TaskRecords,
     next_id: AtomicU64,
+    events: EventBus,
 }
 
 impl fmt::Debug for TaskManager {
@@ -125,12 +139,21 @@ impl fmt::Debug for TaskManager {
         formatter
             .debug_struct("TaskManager")
             .field("task_count", &read_records(&self.tasks).len())
+            .field("events", &self.events)
             .finish_non_exhaustive()
     }
 }
 
 impl TaskManager {
     pub fn new(queue_capacity: usize, worker_count: usize) -> Self {
+        Self::with_event_bus(queue_capacity, worker_count, EventBus::default())
+    }
+
+    pub fn with_events(events: EventBus) -> Self {
+        Self::with_event_bus(DEFAULT_QUEUE_CAPACITY, DEFAULT_WORKER_COUNT, events)
+    }
+
+    pub fn with_event_bus(queue_capacity: usize, worker_count: usize, events: EventBus) -> Self {
         assert!(queue_capacity > 0, "task queue capacity must be positive");
         assert!(worker_count > 0, "task worker count must be positive");
 
@@ -141,8 +164,9 @@ impl TaskManager {
         for worker_index in 0..worker_count {
             let worker_receiver = Arc::clone(&receiver);
             let worker_tasks = Arc::clone(&tasks);
+            let worker_events = events.clone();
             drop(spawn(async move {
-                worker_loop(worker_index, worker_receiver, worker_tasks).await;
+                worker_loop(worker_index, worker_receiver, worker_tasks, worker_events).await;
             }));
         }
 
@@ -150,6 +174,7 @@ impl TaskManager {
             sender: Mutex::new(Some(sender)),
             tasks,
             next_id: AtomicU64::new(1),
+            events,
         }
     }
 
@@ -184,7 +209,11 @@ impl TaskManager {
             return Err(TaskManagerError::QueueUnavailable);
         };
 
-        write_records(&self.tasks).insert(
+        // Keep the record lock until TaskCreated is published. A worker can
+        // dequeue immediately, but cannot transition to Running before this
+        // event has been observed by the bus.
+        let mut records = write_records(&self.tasks);
+        records.insert(
             id.clone(),
             TaskRecord {
                 snapshot: snapshot.clone(),
@@ -192,15 +221,18 @@ impl TaskManager {
             },
         );
 
-        let send_result = sender.try_send(queued);
-        drop(sender_guard);
-
-        if send_result.is_err() {
-            write_records(&self.tasks).remove(&id);
+        if sender.try_send(queued).is_err() {
+            records.remove(&id);
             return Err(TaskManagerError::QueueUnavailable);
         }
 
-        Ok(self.get(&id).unwrap_or(snapshot))
+        self.events.publish(AppEvent::TaskCreated {
+            task: snapshot.clone(),
+        });
+        drop(records);
+        drop(sender_guard);
+
+        Ok(snapshot)
     }
 
     pub fn get(&self, id: &TaskId) -> Option<TaskSnapshot> {
@@ -219,14 +251,22 @@ impl TaskManager {
     pub fn cancel(&self, id: &TaskId) -> Option<TaskSnapshot> {
         let mut tasks = write_records(&self.tasks);
         let record = tasks.get_mut(id)?;
+        let transitioned = !record.snapshot.state.is_terminal();
 
-        if !record.snapshot.state.is_terminal() {
+        if transitioned {
             record.cancellation.store(true, Ordering::Release);
             record.snapshot.state = TaskState::Cancelled;
             record.snapshot.error = None;
         }
 
-        Some(record.snapshot.clone())
+        let snapshot = record.snapshot.clone();
+        if transitioned {
+            self.events.publish(AppEvent::TaskFinished {
+                task: snapshot.clone(),
+            });
+        }
+
+        Some(snapshot)
     }
 
     /// Stops accepting work and cooperatively cancels every non-terminal task.
@@ -235,20 +275,30 @@ impl TaskManager {
         let sender = lock_mutex(&self.sender).take();
         drop(sender);
 
-        let mut cancelled = 0;
-        let mut tasks = write_records(&self.tasks);
-        for record in tasks.values_mut() {
-            if record.snapshot.state.is_terminal() {
-                continue;
-            }
+        let cancelled = {
+            let mut tasks = write_records(&self.tasks);
+            tasks
+                .values_mut()
+                .filter_map(|record| {
+                    if record.snapshot.state.is_terminal() {
+                        return None;
+                    }
 
-            record.cancellation.store(true, Ordering::Release);
-            record.snapshot.state = TaskState::Cancelled;
-            record.snapshot.error = None;
-            cancelled += 1;
+                    record.cancellation.store(true, Ordering::Release);
+                    record.snapshot.state = TaskState::Cancelled;
+                    record.snapshot.error = None;
+                    Some(record.snapshot.clone())
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for snapshot in &cancelled {
+            self.events.publish(AppEvent::TaskFinished {
+                task: snapshot.clone(),
+            });
         }
 
-        cancelled
+        cancelled.len()
     }
 }
 
@@ -309,6 +359,7 @@ async fn worker_loop(
     worker_index: usize,
     receiver: Arc<AsyncMutex<Receiver<QueuedTask>>>,
     tasks: TaskRecords,
+    events: EventBus,
 ) {
     loop {
         let queued = {
@@ -321,13 +372,18 @@ async fn worker_loop(
             return;
         };
 
-        execute_task(worker_index, queued, &tasks).await;
+        execute_task(worker_index, queued, &tasks, &events).await;
     }
 }
 
-async fn execute_task(worker_index: usize, queued: QueuedTask, tasks: &TaskRecords) {
+async fn execute_task(
+    worker_index: usize,
+    queued: QueuedTask,
+    tasks: &TaskRecords,
+    events: &EventBus,
+) {
     let QueuedTask { id, job } = queued;
-    let Some(context) = start_task(tasks, &id) else {
+    let Some(context) = start_task(tasks, &id, events) else {
         return;
     };
 
@@ -336,80 +392,79 @@ async fn execute_task(worker_index: usize, queued: QueuedTask, tasks: &TaskRecor
     let result = spawn_blocking(move || job(job_context)).await;
 
     match result {
-        Ok(Ok(())) => finish_success(tasks, &id),
+        Ok(Ok(())) => finish_success(tasks, &id, events),
         Ok(Err(failure)) => {
             tracing::warn!(worker_index, task_id = %id, error = %failure, "task failed");
-            finish_failure(tasks, &id, failure.into_public_message());
+            finish_failure(tasks, &id, failure.into_public_message(), events);
         }
         Err(error) => {
             tracing::error!(worker_index, task_id = %id, error = %error, "task worker crashed");
-            finish_failure(tasks, &id, "任务执行失败，请重试。".to_owned());
+            finish_failure(tasks, &id, "任务执行失败，请重试。".to_owned(), events);
         }
     }
 }
 
-fn start_task(tasks: &TaskRecords, id: &TaskId) -> Option<TaskContext> {
+fn start_task(tasks: &TaskRecords, id: &TaskId, events: &EventBus) -> Option<TaskContext> {
     let mut records = write_records(tasks);
     let record = records.get_mut(id)?;
 
     if record.cancellation.load(Ordering::Acquire) || record.snapshot.state.is_terminal() {
-        if !record.snapshot.state.is_terminal() {
-            record.snapshot.state = TaskState::Cancelled;
-        }
         return None;
     }
 
     record.snapshot.state = TaskState::Running;
     record.snapshot.error = None;
+    events.publish(AppEvent::TaskStarted {
+        task: record.snapshot.clone(),
+    });
 
     Some(TaskContext {
         id: id.clone(),
         tasks: Arc::clone(tasks),
         cancellation: Arc::clone(&record.cancellation),
+        events: events.clone(),
     })
 }
 
-fn finish_success(tasks: &TaskRecords, id: &TaskId) {
+fn finish_success(tasks: &TaskRecords, id: &TaskId, events: &EventBus) {
     let mut records = write_records(tasks);
     let Some(record) = records.get_mut(id) else {
         return;
     };
 
-    if record.cancellation.load(Ordering::Acquire) || record.snapshot.state == TaskState::Cancelled
+    if record.cancellation.load(Ordering::Acquire)
+        || record.snapshot.state == TaskState::Cancelled
+        || record.snapshot.state.is_terminal()
     {
-        record.snapshot.state = TaskState::Cancelled;
-        record.snapshot.error = None;
-        return;
-    }
-
-    if record.snapshot.state.is_terminal() {
         return;
     }
 
     record.snapshot.progress.complete();
     record.snapshot.state = TaskState::Success;
     record.snapshot.error = None;
+    events.publish(AppEvent::TaskFinished {
+        task: record.snapshot.clone(),
+    });
 }
 
-fn finish_failure(tasks: &TaskRecords, id: &TaskId, public_message: String) {
+fn finish_failure(tasks: &TaskRecords, id: &TaskId, public_message: String, events: &EventBus) {
     let mut records = write_records(tasks);
     let Some(record) = records.get_mut(id) else {
         return;
     };
 
-    if record.cancellation.load(Ordering::Acquire) || record.snapshot.state == TaskState::Cancelled
+    if record.cancellation.load(Ordering::Acquire)
+        || record.snapshot.state == TaskState::Cancelled
+        || record.snapshot.state.is_terminal()
     {
-        record.snapshot.state = TaskState::Cancelled;
-        record.snapshot.error = None;
-        return;
-    }
-
-    if record.snapshot.state.is_terminal() {
         return;
     }
 
     record.snapshot.state = TaskState::Failed;
     record.snapshot.error = Some(public_message);
+    events.publish(AppEvent::TaskFinished {
+        task: record.snapshot.clone(),
+    });
 }
 
 fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -560,6 +615,49 @@ mod tests {
         assert_eq!(
             manager.submit("rejected", 1, |_context| Ok(())),
             Err(TaskManagerError::QueueUnavailable)
+        );
+    }
+
+    #[test]
+    fn publishes_ordered_task_lifecycle_events() {
+        let events = EventBus::new(16);
+        let mut subscriber = events.subscribe();
+        let manager = TaskManager::with_event_bus(4, 1, events);
+        let created = manager
+            .submit("eventful", 1, |context| {
+                context.report_progress(1);
+                Ok(())
+            })
+            .expect("task should be queued");
+
+        assert_eq!(
+            wait_for_terminal(&manager, &created.id).state,
+            TaskState::Success
+        );
+
+        let kinds = tauri::async_runtime::block_on(async {
+            let mut kinds = Vec::new();
+            for _ in 0..4 {
+                kinds.push(
+                    subscriber
+                        .recv()
+                        .await
+                        .expect("task event should arrive")
+                        .event
+                        .kind(),
+                );
+            }
+            kinds
+        });
+
+        assert_eq!(
+            kinds,
+            vec![
+                crate::domain::event::EventKind::TaskCreated,
+                crate::domain::event::EventKind::TaskStarted,
+                crate::domain::event::EventKind::TaskProgressed,
+                crate::domain::event::EventKind::TaskFinished,
+            ]
         );
     }
 

@@ -2,6 +2,7 @@ use tauri::{AppHandle, Manager, RunEvent};
 
 use crate::{
     app::state::AppState,
+    domain::event::AppEvent,
     infrastructure::{
         database::service::DatabaseService,
         logging::{self, LoggingGuards},
@@ -9,7 +10,10 @@ use crate::{
 };
 
 /// Called once the Tauri runtime has registered shared state.
-pub fn on_ready(_app: &AppHandle) {
+pub fn on_ready(app: &AppHandle) {
+    app.state::<AppState>()
+        .event_bus()
+        .publish(AppEvent::ApplicationReady);
     tracing::info!("application runtime ready");
     logging::record_operation("application.ready", "success");
 }
@@ -25,7 +29,9 @@ pub fn on_exit(app: &AppHandle) {
     tracing::info!("application shutdown requested");
     logging::record_operation("application.exit", "requested");
 
-    let cancelled_tasks = app.state::<AppState>().task_manager().shutdown();
+    let state = app.state::<AppState>();
+    state.event_bus().publish(AppEvent::ApplicationExiting);
+    let cancelled_tasks = state.task_manager().shutdown();
     tracing::info!(cancelled_tasks, "task manager stopped");
     logging::record_operation("task_manager.shutdown", "success");
 

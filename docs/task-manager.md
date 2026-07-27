@@ -13,10 +13,11 @@ React service
       ├── worker pool
       ├── task snapshots
       ├── progress context
-      └── cancellation flag
+      ├── cancellation flag
+      └── EventBus publisher
 ```
 
-任务域类型位于 `domain/task.rs`，队列与执行编排位于 `application/task_service.rs`。Tauri 运行时状态通过 `AppState` 持有一个 TaskManager 实例。
+任务域类型位于 `domain/task.rs`，队列与执行编排位于 `application/task_service.rs`。Tauri 运行时状态通过 `AppState` 持有共享 EventBus 和 TaskManager；TaskManager 使用该 EventBus 发布任务生命周期快照。
 
 TaskManager 复用 `tauri::async_runtime` 提供的 Tokio channel、worker spawn 和 blocking worker pool，不引入第二套运行时。
 
@@ -81,6 +82,12 @@ pending/running → cancelled
 
 Rust 无法安全地强制终止任意正在运行的阻塞代码，因此新增任务处理器不得长时间忽略取消标记。
 
+## 任务事件
+
+TaskManager 发布 `task_created`、`task_started`、`task_progressed` 和 `task_finished`。成功、失败和取消统一通过终态 `TaskSnapshot` 发送 `task_finished`，订阅模块无需轮询内部任务表。
+
+状态转换与发布保持有序；例如，取消和进度并发时不会在 `task_finished(cancelled)` 之后再发送新的进度。事件总线语义见 `docs/event-bus.md`。
+
 ## IPC 命令
 
 | Command | 输入 | 输出 |
@@ -138,3 +145,4 @@ Rust 测试覆盖：
 - shutdown 后拒绝新任务
 - IPC 参数边界
 - 稳定状态序列化
+- TaskManager 生命周期事件顺序
