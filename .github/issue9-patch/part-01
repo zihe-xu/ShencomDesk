@@ -1,0 +1,150 @@
++};
++
++use tokio::sync::broadcast;
++
++use crate::domain::event::{AppEvent, EventEnvelope, EventKind};
++
++const DEFAULT_EVENT_CAPACITY: usize = 256;
++
++/// In-process fan-out bus used for communication between Rust Core modules.
++///
++/// The bounded Tokio broadcast channel gives every active subscriber an
++/// independent cursor. Slow subscribers receive a deterministic `Lagged`
++/// error rather than forcing publishers or other subscribers to wait.
++#[derive(Clone)]
++pub struct EventBus {
++    sender: broadcast::Sender<EventEnvelope>,
++    next_sequence: Arc<AtomicU64>,
++    publish_lock: Arc<Mutex<()>>,
++}
++
++impl fmt::Debug for EventBus {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_struct("EventBus")
++            .field("receiver_count", &self.sender.receiver_count())
++            .finish_non_exhaustive()
++    }
++}
++
++impl EventBus {
++    pub fn new(capacity: usize) -> Self {
++        assert!(capacity > 0, "event bus capacity must be positive");
++        let (sender, _) = broadcast::channel(capacity);
++
++        Self {
++            sender,
++            next_sequence: Arc::new(AtomicU64::new(1)),
++            publish_lock: Arc::new(Mutex::new(())),
++        }
++    }
++
++    /// Publishes without requiring a subscriber to be present.
++    ///
++    /// The returned envelope is the exact value offered to subscribers and can
++    /// be used by the publisher for diagnostics or correlation.
++    pub fn publish(&self, event: AppEvent) -> EventEnvelope {
++        // Serialize sequence assignment and channel send so every subscriber
++        // observes the same monotonically increasing order under concurrency.
++        let _publish_guard = self
++            .publish_lock
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner());
++        let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
++        let envelope = EventEnvelope::new(sequence, unix_time_ms(), event);
++
++        // No active subscriber is a valid state for an in-process event bus.
++        // `send` only fails in that case, so publishing remains fire-and-forget.
++        let _ = self.sender.send(envelope.clone());
++        envelope
++    }
++
++    pub fn subscribe(&self) -> EventSubscriber {
++        EventSubscriber::new(self.sender.subscribe(), None)
++    }
++
++    pub fn subscribe_to(
++        &self,
++        kinds: impl IntoIterator<Item = EventKind>,
++    ) -> EventSubscriber {
++        let kinds = kinds.into_iter().collect::<BTreeSet<_>>();
++        assert!(
++            !kinds.is_empty(),
++            "filtered event subscriptions require at least one event kind"
++        );
++        EventSubscriber::new(self.sender.subscribe(), Some(kinds))
++    }
++
++    pub fn subscriber_count(&self) -> usize {
++        self.sender.receiver_count()
++    }
++}
++
++impl Default for EventBus {
++    fn default() -> Self {
++        Self::new(DEFAULT_EVENT_CAPACITY)
++    }
++}
++
++pub struct EventSubscriber {
++    receiver: broadcast::Receiver<EventEnvelope>,
++    kinds: Option<BTreeSet<EventKind>>,
++}
++
++impl fmt::Debug for EventSubscriber {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_struct("EventSubscriber")
++            .field("kinds", &self.kinds)
++            .finish_non_exhaustive()
++    }
++}
++
++impl EventSubscriber {
++    fn new(
++        receiver: broadcast::Receiver<EventEnvelope>,
++        kinds: Option<BTreeSet<EventKind>>,
++    ) -> Self {
++        Self { receiver, kinds }
++    }
++
++    pub async fn recv(&mut self) -> Result<EventEnvelope, EventReceiveError> {
++        loop {
++            let envelope = self.receiver.recv().await.map_err(EventReceiveError::from)?;
++            if self.accepts(&envelope) {
++                return Ok(envelope);
++            }
++        }
++    }
++
++    /// Receives one accepted event without waiting.
++    ///
++    /// Unmatched events are consumed for this subscriber. `Ok(None)` means no
++    /// accepted event is currently buffered.
++    pub fn try_recv(&mut self) -> Result<Option<EventEnvelope>, EventReceiveError> {
++        loop {
++            match self.receiver.try_recv() {
++                Ok(envelope) if self.accepts(&envelope) => return Ok(Some(envelope)),
++                Ok(_) => continue,
++                Err(broadcast::error::TryRecvError::Empty) => return Ok(None),
++                Err(broadcast::error::TryRecvError::Closed) => {
++                    return Err(EventReceiveError::Closed)
++                }
++                Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
++                    return Err(EventReceiveError::Lagged(skipped))
++                }
++            }
++        }
++    }
++
++    fn accepts(&self, envelope: &EventEnvelope) -> bool {
++        match &self.kinds {
++            Some(kinds) => kinds.contains(&envelope.event.kind()),
++            None => true,
++        }
++    }
++}
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum EventReceiveError {
++    Lagged(u64),
