@@ -145,3 +145,5 @@ Rust 测试覆盖：
 - FileService 输入上限
 - EventBus `file_changed` 发布
 - IPC 请求字段和错误脱敏
+
+GitHub Actions 还会执行 Rust 格式检查、Clippy（警告视为错误）、全量 Rust 测试、前端错误协议测试和生产构建。
