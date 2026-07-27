@@ -43,10 +43,24 @@ Pull Request 与 `main` 分支由 GitHub Actions 自动执行：
 
 ```bash
 npm ci
+npm run test
 npm run build
 cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 ```
+
+`npm run test` 同时覆盖前端错误映射测试和合并后构建触发判定测试。
+
+## 合并后自动化构建
+
+Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 macOS 与 Windows Runner 上构建 Tauri 安装包，并将产物保留 14 天。
+
+- 普通合并：构建合并后的提交并上传 macOS、Windows Artifact。
+- 带 `skip-build` 标签的 PR：只记录跳过原因，不执行构建或上传产物。
+- PR 关闭但未合并：不执行构建。
+- 需要补构建时：可在 GitHub Actions 中使用 `workflow_dispatch` 手动触发。
+
+构建产物当前不包含正式代码签名、Release 发布或 Tauri Updater 元数据。详细规则和验证方式见 [`docs/automated-builds.md`](docs/automated-builds.md)。
 
 > Rust 与 Tauri 的平台依赖请参考 Tauri 官方环境配置文档。
