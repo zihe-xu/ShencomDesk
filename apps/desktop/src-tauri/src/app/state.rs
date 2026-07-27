@@ -6,6 +6,7 @@ use std::{
 use crate::application::{
     event_bus::EventBus,
     file_service::{FileRepository, FileService},
+    plugin_service::{PluginRepository, PluginRuntime, PluginService},
     task_service::TaskManager,
 };
 
@@ -16,19 +17,27 @@ pub struct AppState {
     event_bus: EventBus,
     task_manager: TaskManager,
     file_service: FileService,
+    plugin_service: PluginService,
 }
 
 impl AppState {
-    pub fn new(file_repository: Arc<dyn FileRepository>) -> Self {
+    pub fn new(
+        file_repository: Arc<dyn FileRepository>,
+        plugin_repository: Arc<dyn PluginRepository>,
+        plugin_runtime: Arc<dyn PluginRuntime>,
+    ) -> Self {
         let event_bus = EventBus::default();
         let task_manager = TaskManager::with_events(event_bus.clone());
         let file_service = FileService::new(file_repository, event_bus.clone());
+        let plugin_service =
+            PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
 
         Self {
             started_at: Instant::now(),
             event_bus,
             task_manager,
             file_service,
+            plugin_service,
         }
     }
 
@@ -47,17 +56,47 @@ impl AppState {
     pub fn file_service(&self) -> &FileService {
         &self.file_service
     }
+
+    pub fn plugin_service(&self) -> &PluginService {
+        &self.plugin_service
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{domain::event::EventKind, infrastructure::filesystem::LocalFileRepository};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use crate::{
+        domain::event::EventKind,
+        infrastructure::{
+            filesystem::LocalFileRepository,
+            plugins::{LocalPluginRepository, WasmtimePluginRuntime},
+        },
+    };
 
     use super::*;
 
     #[test]
     fn core_services_share_the_application_event_bus() {
-        let state = AppState::new(Arc::new(LocalFileRepository::default()));
+        let plugin_root = std::env::temp_dir().join(format!(
+            "shendesk-state-plugin-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let state = AppState::new(
+            Arc::new(LocalFileRepository::default()),
+            Arc::new(
+                LocalPluginRepository::new(&plugin_root)
+                    .expect("plugin repository should initialize"),
+            ),
+            Arc::new(WasmtimePluginRuntime::new().expect("plugin runtime should initialize")),
+        );
         let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
         let created = state
             .task_manager()
@@ -77,5 +116,7 @@ mod tests {
         assert_eq!(event.event.kind(), EventKind::TaskFinished);
         assert!(state.task_manager().get(&created.id).is_some());
         assert_eq!(state.file_service().shutdown(), 0);
+        assert_eq!(state.plugin_service().shutdown(), 0);
+        let _ = fs::remove_dir_all(plugin_root);
     }
 }

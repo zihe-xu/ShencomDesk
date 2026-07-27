@@ -31,6 +31,13 @@ pub fn on_exit(app: &AppHandle) {
 
     let state = app.state::<AppState>();
     state.event_bus().publish(AppEvent::ApplicationExiting);
+
+    // Plugin hooks run before shared file and task services are stopped. ABI v1
+    // has no host imports, but this ordering preserves room for future explicit capabilities.
+    let stopped_plugins = state.plugin_service().shutdown();
+    tracing::info!(stopped_plugins, "plugin service stopped");
+    logging::record_operation("plugin_service.shutdown", "success");
+
     let stopped_watches = state.file_service().shutdown();
     tracing::info!(stopped_watches, "file service stopped");
     logging::record_operation("file_service.shutdown", "success");

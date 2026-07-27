@@ -18,6 +18,13 @@
     "allow-index-files",
     "allow-start-file-watch",
     "allow-stop-file-watch",
-    "allow-clear-file-cache"
+    "allow-clear-file-cache",
+    "allow-install-plugin",
+    "allow-list-plugins",
+    "allow-get-plugin",
+    "allow-enable-plugin",
+    "allow-disable-plugin",
+    "allow-execute-plugin-command",
+    "allow-uninstall-plugin"
   ]
 }

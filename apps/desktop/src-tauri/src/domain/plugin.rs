@@ -6,9 +6,7 @@ pub const PLUGIN_API_VERSION_EXPORT: &str = "shendesk_plugin_api_version";
 pub const PLUGIN_ENABLE_EXPORT: &str = "shendesk_on_enable";
 pub const PLUGIN_DISABLE_EXPORT: &str = "shendesk_on_disable";
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PluginId(String);
 

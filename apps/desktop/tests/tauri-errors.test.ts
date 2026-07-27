@@ -39,6 +39,17 @@ test("preserves stable file errors", () => {
   assert.equal(normalized.message, "没有权限访问指定文件或目录。");
 });
 
+test("preserves stable plugin errors", () => {
+  const normalized = normalizeIpcError({
+    code: "plugin_invalid_package",
+    message: "插件包无效或与当前版本不兼容。",
+  });
+
+  assert.ok(normalized instanceof ShenDeskIpcError);
+  assert.equal(normalized.code, "plugin_invalid_package");
+  assert.equal(normalized.message, "插件包无效或与当前版本不兼容。");
+});
+
 test("redacts unknown objects and native errors", () => {
   const internalPath = "/Users/example/private/app.sqlite";
   const unknownPayload = normalizeIpcError({

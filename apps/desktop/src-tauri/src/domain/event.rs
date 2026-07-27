@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use super::{file::FileChange, task::TaskSnapshot};
+use super::{
+    file::FileChange,
+    plugin::{PluginExecution, PluginId, PluginSnapshot},
+    task::TaskSnapshot,
+};
 
 /// Stable event categories used by subscribers to select the messages they need.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -13,6 +17,11 @@ pub enum EventKind {
     TaskProgressed,
     TaskFinished,
     FileChanged,
+    PluginInstalled,
+    PluginEnabled,
+    PluginDisabled,
+    PluginExecuted,
+    PluginRemoved,
     UserLoggedIn,
     UpdateAvailable,
 }
@@ -32,6 +41,11 @@ pub enum AppEvent {
     TaskProgressed { task: TaskSnapshot },
     TaskFinished { task: TaskSnapshot },
     FileChanged { change: FileChange },
+    PluginInstalled { plugin: PluginSnapshot },
+    PluginEnabled { plugin: PluginSnapshot },
+    PluginDisabled { plugin: PluginSnapshot },
+    PluginExecuted { execution: PluginExecution },
+    PluginRemoved { plugin_id: PluginId },
     UserLoggedIn { user_id: String },
     UpdateAvailable { version: String },
 }
@@ -46,6 +60,11 @@ impl AppEvent {
             Self::TaskProgressed { .. } => EventKind::TaskProgressed,
             Self::TaskFinished { .. } => EventKind::TaskFinished,
             Self::FileChanged { .. } => EventKind::FileChanged,
+            Self::PluginInstalled { .. } => EventKind::PluginInstalled,
+            Self::PluginEnabled { .. } => EventKind::PluginEnabled,
+            Self::PluginDisabled { .. } => EventKind::PluginDisabled,
+            Self::PluginExecuted { .. } => EventKind::PluginExecuted,
+            Self::PluginRemoved { .. } => EventKind::PluginRemoved,
             Self::UserLoggedIn { .. } => EventKind::UserLoggedIn,
             Self::UpdateAvailable { .. } => EventKind::UpdateAvailable,
         }
@@ -74,7 +93,10 @@ impl EventEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::task::{TaskId, TaskSnapshot};
+    use crate::domain::{
+        plugin::PluginId,
+        task::{TaskId, TaskSnapshot},
+    };
 
     #[test]
     fn event_kind_matches_each_wire_event() {
@@ -91,6 +113,13 @@ mod tests {
         assert_eq!(
             AppEvent::TaskFinished { task }.kind(),
             EventKind::TaskFinished
+        );
+        assert_eq!(
+            AppEvent::PluginRemoved {
+                plugin_id: PluginId::new("com.shencom.hello"),
+            }
+            .kind(),
+            EventKind::PluginRemoved
         );
     }
 
@@ -109,5 +138,20 @@ mod tests {
         assert_eq!(value["publishedAtUnixMs"], 123);
         assert_eq!(value["event"]["type"], "update_available");
         assert_eq!(value["event"]["payload"]["version"], "2.0.0");
+    }
+
+    #[test]
+    fn plugin_ids_serialize_as_strings_in_event_payloads() {
+        let envelope = EventEnvelope::new(
+            8,
+            456,
+            AppEvent::PluginRemoved {
+                plugin_id: PluginId::new("com.shencom.hello"),
+            },
+        );
+        let value = serde_json::to_value(envelope).expect("event should serialize");
+
+        assert_eq!(value["event"]["type"], "plugin_removed");
+        assert_eq!(value["event"]["payload"]["plugin_id"], "com.shencom.hello");
     }
 }

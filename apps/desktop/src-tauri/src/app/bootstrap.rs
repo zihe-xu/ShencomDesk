@@ -5,7 +5,10 @@ use tauri::{App, Manager};
 use crate::{
     application::config_service::ConfigService,
     infrastructure::{
-        database::service::DatabaseService, filesystem::LocalFileRepository, logging,
+        database::service::DatabaseService,
+        filesystem::LocalFileRepository,
+        logging,
+        plugins::{LocalPluginRepository, WasmtimePluginRuntime},
     },
 };
 
@@ -37,8 +40,32 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     })?;
     logging::record_operation("config.load", "success");
 
+    let plugin_root = app_data_dir.join("plugins");
+    let plugin_repository =
+        Arc::new(LocalPluginRepository::new(&plugin_root).map_err(|error| {
+            tracing::error!(error = %error, "plugin repository initialization failed");
+            error
+        })?);
+    let plugin_runtime = Arc::new(WasmtimePluginRuntime::new().map_err(|error| {
+        tracing::error!(error = %error, "plugin runtime initialization failed");
+        error
+    })?);
+    let state = AppState::new(
+        Arc::new(LocalFileRepository::default()),
+        plugin_repository,
+        plugin_runtime,
+    );
+    let plugin_report = state.plugin_service().restore_enabled_plugins();
+    tracing::info!(
+        restored = plugin_report.restored,
+        disabled_after_failure = plugin_report.disabled_after_failure,
+        plugin_root = %plugin_root.display(),
+        "plugin service initialized"
+    );
+    logging::record_operation("plugin_service.initialize", "success");
+
     app.manage(database);
-    app.manage(AppState::new(Arc::new(LocalFileRepository::default())));
+    app.manage(state);
     lifecycle::on_ready(app.handle());
 
     Ok(())
