@@ -14,6 +14,11 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `get_task_status` | `{ taskId: string }` | `TaskSnapshot` |
 | `list_tasks` | 无 | `TaskSnapshot[]` |
 | `cancel_task` | `{ taskId: string }` | `TaskSnapshot` |
+| `read_text_file` | `{ request: { path, maxBytes? } }` | `FileReadResult` |
+| `index_files` | `{ request: { root, maxEntries?, maxDepth? } }` | `FileIndex` |
+| `start_file_watch` | `{ request: { path, recursive? } }` | `FileWatch` |
+| `stop_file_watch` | `{ watchId: string }` | watch ID |
+| `clear_file_cache` | 无 | 无 |
 
 ## 分层规则
 
@@ -48,6 +53,13 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 | `config_reset_failed` | 默认配置恢复失败 |
 | `task_not_found` | 指定任务不存在 |
 | `task_queue_unavailable` | 任务队列已满、已关闭或正在退出 |
+| `file_not_found` | 指定文件或目录不存在 |
+| `file_access_denied` | OS 拒绝文件访问 |
+| `file_too_large` | 文本文件超过读取上限 |
+| `file_not_text` | 文件不是有效 UTF-8 文本 |
+| `file_watch_unavailable` | 平台文件监听无法启动 |
+| `file_watch_not_found` | 指定 watch ID 不存在 |
+| `file_operation_failed` | 其他文件操作失败 |
 | `validation_failed` | 输入未通过验证 |
 | `unknown_error` | 前端收到未知或不可信错误载荷 |
 
@@ -100,11 +112,11 @@ const current = await getTaskStatus(task.id);
 await cancelTask(current.id);
 ```
 
-所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。配置与任务的类型安全封装分别位于 `src/services/config.ts` 和 `src/services/tasks.ts`。纯错误映射位于 `src/services/tauri-errors.ts`，可脱离 Tauri Runtime 使用 Node 内置测试执行。
+所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。配置、任务和文件的类型安全封装分别位于 `src/services/config.ts`、`src/services/tasks.ts` 和 `src/services/files.ts`。纯错误映射位于 `src/services/tauri-errors.ts`，可脱离 Tauri Runtime 使用 Node 内置测试执行。
 
 ## 测试
 
 CI 同时执行：
 
 - Rust：验证数据库错误脱敏、稳定配置/任务错误码、任务参数边界，以及 TaskManager 的队列、进度、失败、取消和关闭行为。
-- TypeScript：验证已知配置/任务错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。
+- TypeScript：验证已知配置/任务/文件错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。

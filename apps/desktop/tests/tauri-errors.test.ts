@@ -28,6 +28,17 @@ test("preserves stable task errors", () => {
   assert.equal(normalized.message, "未找到指定任务。");
 });
 
+test("preserves stable file errors", () => {
+  const normalized = normalizeIpcError({
+    code: "file_access_denied",
+    message: "没有权限访问指定文件或目录。",
+  });
+
+  assert.ok(normalized instanceof ShenDeskIpcError);
+  assert.equal(normalized.code, "file_access_denied");
+  assert.equal(normalized.message, "没有权限访问指定文件或目录。");
+});
+
 test("redacts unknown objects and native errors", () => {
   const internalPath = "/Users/example/private/app.sqlite";
   const unknownPayload = normalizeIpcError({

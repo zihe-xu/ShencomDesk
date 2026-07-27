@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::utils::{AppError, AppErrorKind};
+use crate::{
+    application::file_service::{FileServiceError, FileServiceErrorKind},
+    utils::{AppError, AppErrorKind},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -11,6 +14,13 @@ pub enum IpcErrorCode {
     ConfigResetFailed,
     TaskNotFound,
     TaskQueueUnavailable,
+    FileNotFound,
+    FileAccessDenied,
+    FileTooLarge,
+    FileNotText,
+    FileWatchUnavailable,
+    FileWatchNotFound,
+    FileOperationFailed,
     ValidationFailed,
     UnknownError,
 }
@@ -45,6 +55,39 @@ impl IpcError {
             IpcErrorCode::TaskQueueUnavailable,
             "后台任务服务暂时不可用，请重试。",
         )
+    }
+
+    pub fn for_file_operation(error: &FileServiceError) -> Self {
+        match error.kind() {
+            FileServiceErrorKind::InvalidInput
+            | FileServiceErrorKind::NotAFile
+            | FileServiceErrorKind::NotADirectory => Self::validation(),
+            FileServiceErrorKind::NotFound => {
+                Self::new(IpcErrorCode::FileNotFound, "未找到指定文件或目录。")
+            }
+            FileServiceErrorKind::PermissionDenied => Self::new(
+                IpcErrorCode::FileAccessDenied,
+                "没有权限访问指定文件或目录。",
+            ),
+            FileServiceErrorKind::TooLarge => {
+                Self::new(IpcErrorCode::FileTooLarge, "文件超过允许读取的大小。")
+            }
+            FileServiceErrorKind::NonUtf8 => {
+                Self::new(IpcErrorCode::FileNotText, "该文件不是可读取的 UTF-8 文本。")
+            }
+            FileServiceErrorKind::WatchUnavailable => Self::new(
+                IpcErrorCode::FileWatchUnavailable,
+                "文件监听服务暂时不可用，请重试。",
+            ),
+            FileServiceErrorKind::WatchNotFound => {
+                Self::new(IpcErrorCode::FileWatchNotFound, "未找到指定文件监听。")
+            }
+            FileServiceErrorKind::Io => Self::file_operation_failed(),
+        }
+    }
+
+    pub fn file_operation_failed() -> Self {
+        Self::new(IpcErrorCode::FileOperationFailed, "文件操作失败，请重试。")
     }
 
     pub fn validation() -> Self {
@@ -132,5 +175,19 @@ mod tests {
         assert_eq!(unavailable.code, IpcErrorCode::TaskQueueUnavailable);
         assert_eq!(not_found.message, "未找到指定任务。");
         assert_eq!(unavailable.message, "后台任务服务暂时不可用，请重试。");
+    }
+
+    #[test]
+    fn maps_file_errors_to_stable_redacted_payloads() {
+        let internal = FileServiceError::new(
+            FileServiceErrorKind::PermissionDenied,
+            "permission denied: /Users/example/private.txt",
+        );
+        let payload = IpcError::for_file_operation(&internal);
+        let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+        assert_eq!(payload.code, IpcErrorCode::FileAccessDenied);
+        assert!(!serialized.contains("/Users/example"));
+        assert_eq!(payload.message, "没有权限访问指定文件或目录。");
     }
 }

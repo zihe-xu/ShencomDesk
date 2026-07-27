@@ -3,6 +3,7 @@
 pub mod config_repository;
 pub mod config_service;
 pub mod event_bus;
+pub mod file_service;
 pub mod task_service;
 
 pub mod health_service {
@@ -19,10 +20,6 @@ pub mod health_service {
 
 pub mod user_service {
     pub struct UserService;
-}
-
-pub mod file_service {
-    pub struct FileService;
 }
 
 pub mod sync_service {

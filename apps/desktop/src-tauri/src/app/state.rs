@@ -1,6 +1,13 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use crate::application::{event_bus::EventBus, task_service::TaskManager};
+use crate::application::{
+    event_bus::EventBus,
+    file_service::{FileRepository, FileService},
+    task_service::TaskManager,
+};
 
 /// Shared runtime state managed by Tauri.
 #[derive(Debug)]
@@ -8,17 +15,20 @@ pub struct AppState {
     started_at: Instant,
     event_bus: EventBus,
     task_manager: TaskManager,
+    file_service: FileService,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(file_repository: Arc<dyn FileRepository>) -> Self {
         let event_bus = EventBus::default();
         let task_manager = TaskManager::with_events(event_bus.clone());
+        let file_service = FileService::new(file_repository, event_bus.clone());
 
         Self {
             started_at: Instant::now(),
             event_bus,
             task_manager,
+            file_service,
         }
     }
 
@@ -33,23 +43,21 @@ impl AppState {
     pub fn task_manager(&self) -> &TaskManager {
         &self.task_manager
     }
-}
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
+    pub fn file_service(&self) -> &FileService {
+        &self.file_service
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::event::EventKind;
+    use crate::{domain::event::EventKind, infrastructure::filesystem::LocalFileRepository};
 
     use super::*;
 
     #[test]
-    fn task_manager_and_modules_share_the_application_event_bus() {
-        let state = AppState::new();
+    fn core_services_share_the_application_event_bus() {
+        let state = AppState::new(Arc::new(LocalFileRepository::default()));
         let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
         let created = state
             .task_manager()
@@ -68,5 +76,6 @@ mod tests {
 
         assert_eq!(event.event.kind(), EventKind::TaskFinished);
         assert!(state.task_manager().get(&created.id).is_some());
+        assert_eq!(state.file_service().shutdown(), 0);
     }
 }

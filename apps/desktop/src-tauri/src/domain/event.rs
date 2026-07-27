@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::task::TaskSnapshot;
+use super::{file::FileChange, task::TaskSnapshot};
 
 /// Stable event categories used by subscribers to select the messages they need.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ pub enum AppEvent {
     TaskStarted { task: TaskSnapshot },
     TaskProgressed { task: TaskSnapshot },
     TaskFinished { task: TaskSnapshot },
-    FileChanged { path: String },
+    FileChanged { change: FileChange },
     UserLoggedIn { user_id: String },
     UpdateAvailable { version: String },
 }
