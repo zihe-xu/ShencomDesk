@@ -127,3 +127,67 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
   assert.match(workflow, /max-parallel: 1/);
   assert.match(workflow, /releaseDraft: true/);
 });
+
+test("runtime updater boundary remains signed, HTTPS-only, and least-privilege", async () => {
+  const [capabilityText, baseConfigText, releaseConfigText, updaterSource, buildScript] =
+    await Promise.all([
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/capabilities/default.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/tauri.conf.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/tauri.release.conf.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/src/infrastructure/updater/mod.rs",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL("../../apps/desktop/src-tauri/build.rs", import.meta.url),
+        "utf8",
+      ),
+    ]);
+
+  const capability = JSON.parse(capabilityText);
+  const baseConfig = JSON.parse(baseConfigText);
+  const releaseConfig = JSON.parse(releaseConfigText);
+
+  assert.ok(capability.permissions.includes("allow-check-for-updates"));
+  assert.ok(capability.permissions.includes("allow-install-update"));
+  assert.equal(
+    capability.permissions.some((permission) => permission.startsWith("updater:")),
+    false,
+  );
+  assert.equal(baseConfig.bundle.createUpdaterArtifacts, undefined);
+  assert.equal(releaseConfig.bundle.createUpdaterArtifacts, true);
+  assert.match(
+    updaterSource,
+    /https:\/\/github\.com\/zihe-xu\/ShencomDesk\/releases\/latest\/download\/latest\.json/,
+  );
+  assert.match(
+    updaterSource,
+    /option_env!\("SHENDESK_UPDATER_PUBLIC_KEY"\)/,
+  );
+  assert.doesNotMatch(updaterSource, /dangerous_(?:insecure|accept)/);
+  assert.match(
+    buildScript,
+    /cargo:rerun-if-env-changed=SHENDESK_UPDATER_PUBLIC_KEY/,
+  );
+});
