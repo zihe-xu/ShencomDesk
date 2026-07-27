@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - ci/issue-37-windows-diagnostic
+  pull_request:
+    branches:
+      - main
+    types:
+      - reopened
+      - synchronize
   workflow_dispatch:
 
 permissions:
@@ -16,6 +22,7 @@ concurrency:
 jobs:
   export-icons:
     name: Export generated icons
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
