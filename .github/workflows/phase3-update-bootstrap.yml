@@ -4,19 +4,12 @@ on:
   push:
     branches:
       - feat/issue-13-auto-update
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - reopened
-      - synchronize
 
 permissions:
   contents: write
 
 concurrency:
-  group: phase3-update-bootstrap-${{ github.ref }}
+  group: phase3-update-bootstrap-feat-issue-13
   cancel-in-progress: true
 
 jobs:
@@ -32,7 +25,19 @@ jobs:
           ref: feat/issue-13-auto-update
           fetch-depth: 0
 
+      - name: Detect payload
+        id: payload
+        shell: bash
+        run: |
+          if compgen -G '.phase3-update-payload/part-*' > /dev/null; then
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "Bootstrap payload has already been consumed."
+          fi
+
       - name: Recover complete leading archive entries
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -u
@@ -50,13 +55,13 @@ jobs:
             fi
           done
 
-      - name: Remove bootstrap transport
+      - name: Remove consumed payload
+        if: steps.payload.outputs.present == 'true'
         shell: bash
-        run: |
-          rm -rf .phase3-update-payload
-          rm -f .github/workflows/phase3-update-bootstrap.yml
+        run: rm -rf .phase3-update-payload
 
       - name: Commit recovered release infrastructure
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
