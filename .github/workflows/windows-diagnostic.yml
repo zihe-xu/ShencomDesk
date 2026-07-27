@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - ci/issue-37-windows-diagnostic
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
@@ -16,6 +23,7 @@ concurrency:
 jobs:
   diagnose:
     name: Diagnose Windows packaging
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: windows-2022
     timeout-minutes: 60
 
