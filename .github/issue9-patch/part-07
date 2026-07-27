@@ -1,0 +1,150 @@
++
++```rust
++use crate::domain::event::EventKind;
++
++let mut subscriber = state.event_bus().subscribe_to([
++    EventKind::TaskFinished,
++    EventKind::FileChanged,
++]);
++```
++
++每个 subscriber 拥有独立游标。一个订阅者处理较慢不会阻塞发布方，也不会阻塞其他订阅者。
++
++## 有界广播与 Lagged
++
++默认容量为 256。EventBus 不保存无限历史，也不向新订阅者重放订阅前的事件。
++
++当订阅者落后并且其未读事件已被覆盖时，`recv` 或 `try_recv` 返回：
++
++```rust
++EventReceiveError::Lagged(skipped)
++```
++
++订阅模块必须根据业务语义处理：
++
++- 可恢复状态：重新读取 SQLite 或当前服务快照
++- 仅诊断事件：记录 skipped 数量并继续
++- 必须逐条处理的工作：不要只依赖 EventBus，应使用持久化队列或领域表
++
++当所有 publisher 被释放时返回 `EventReceiveError::Closed`。
++
++## TaskManager 集成
++
++TaskManager 使用应用级 EventBus 发布完整生命周期：
++
++```text
++task_created
++    ↓
++task_started
++    ↓
++task_progressed (0..N)
++    ↓
++task_finished (success / failed / cancelled)
++```
++
++任务状态转换和事件发布在同一任务记录锁内完成，从而避免取消、进度和完成并发时产生倒序事件。事件 payload 使用 `TaskSnapshot`，订阅者无需再直接访问 TaskManager 内部状态。
++
++## 应用生命周期
++
++- 完成共享状态注册后发布 `application_ready`
++- 开始退出清理时发布 `application_exiting`
++- 随后 TaskManager 取消非终态任务并发布对应 `task_finished`
++
++EventBus 是进程内通信设施；应用退出后事件不会保留。需要跨重启恢复的数据必须写入 SQLite。
++
++## 约束
++
++1. 模块通过 `AppEvent` 通信，不把闭包、Tauri handle 或基础设施对象放入事件。
++2. 事件 payload 不得包含 token、密钥或不必要的本地敏感信息。
++3. Subscriber 不应在接收循环中执行长时间阻塞工作；重任务应提交给 TaskManager。
++4. Subscriber 必须显式处理 `Lagged` 和 `Closed`。
++5. EventBus 不代替持久化任务队列、数据库事务或跨进程消息系统。
++
++## 测试
++
++测试覆盖：
++
++- 多 subscriber fan-out
++- 按 `EventKind` 过滤
++- 慢 subscriber 的 lag 检测
++- clone publisher 共享有序 sequence
++- 零 subscriber 发布
++- Event wire format
++- TaskManager 生命周期事件顺序
++- AppState 中 TaskManager 与其他模块共享同一 EventBus
+diff --git a/docs/lifecycle.md b/docs/lifecycle.md
+index b59cbc7..f6e3e3c 100644
+--- a/docs/lifecycle.md
++++ b/docs/lifecycle.md
+@@ -8,18 +8,21 @@ ShenDesk 使用 Tauri `App::run` 的事件回调统一处理运行时生命周
+ 2. 初始化 tracing 日志并托管 `LoggingGuards`。
+ 3. 创建 SQLite 连接池并执行 SQLx Migration。
+ 4. 加载、迁移或恢复应用配置。
+-5. 注册 Tauri 管理状态。
+-6. 记录 `application.ready` 操作日志。
++5. 注册包含 EventBus 和 TaskManager 的 Tauri 管理状态。
++6. 发布 `application_ready`。
++7. 记录 `application.ready` 操作日志。
+ 
+ ## 退出顺序
+ 
+ 资源清理只在 `RunEvent::Exit` 执行：
+ 
+ 1. 记录 `application.exit=requested`。
+-2. 执行 `PRAGMA wal_checkpoint(TRUNCATE)`。
+-3. 关闭 SQLx 连接池，阻止新的数据库操作。
+-4. 记录数据库和应用退出结果。
+-5. 丢弃 tracing `WorkerGuard`，刷新三个非阻塞日志 Writer。
++2. 发布 `application_exiting`。
++3. TaskManager 停止接收任务，取消非终态任务并发布 `task_finished(cancelled)`。
++4. 执行 `PRAGMA wal_checkpoint(TRUNCATE)`。
++5. 关闭 SQLx 连接池，阻止新的数据库操作。
++6. 记录数据库和应用退出结果。
++7. 丢弃 tracing `WorkerGuard`，刷新三个非阻塞日志 Writer。
+ 
+ `RunEvent::ExitRequested` 表示应用即将退出，但未来可能被确认对话框、后台任务或未保存数据阻止。因此该事件暂不执行不可逆的资源释放。
+ 
+diff --git a/docs/rust-core.md b/docs/rust-core.md
+index d1529e7..021148c 100644
+--- a/docs/rust-core.md
++++ b/docs/rust-core.md
+@@ -16,8 +16,8 @@ Domain                  Infrastructure Adapter
+ 
+ - `app`：启动、共享状态和生命周期。
+ - `commands`：接收 Tauri IPC 调用，只做输入输出适配。
+-- `application`：组织用例、服务流程并定义持久化端口。
+-- `domain`：领域类型与规则，不依赖 Tauri 或基础设施。
++- `application`：组织用例、服务流程，定义持久化端口并提供进程内 EventBus。
++- `domain`：领域类型、规则与事件协议，不依赖 Tauri 或基础设施。
+ - `infrastructure`：数据库、缓存、文件、网络和系统适配器。
+ - `utils`：错误类型等横切工具。
+ 
+@@ -48,3 +48,13 @@ DatabaseService (SQLx / SQLite)
+ 
+ - `health_check` 命令读取 Tauri 管理的运行状态，调用 `HealthService`，返回领域层的 `HealthStatus`。
+ - 配置命令从 Tauri State 取得 `DatabaseService`，但只把它作为 `ConfigRepository` 传给 `ConfigService`，命令层不执行 SQL。
++
++## 模块事件通信
++
++模块间通知通过 `application::event_bus::EventBus` 发送 Domain 层 `AppEvent`：
++
++```text
++Publisher → EventBus (tokio broadcast) → Subscriber(s)
++```
++
++EventBus 支持独立多订阅者、按 `EventKind` 过滤、单调 sequence 以及慢订阅者 lag 检测。它只用于进程内通知；需要跨重启恢复的状态仍由 SQLite 持久化。详见 `docs/event-bus.md`。
+diff --git a/docs/task-manager.md b/docs/task-manager.md
+index 327029d..cefa63a 100644
+--- a/docs/task-manager.md
++++ b/docs/task-manager.md
+@@ -13,10 +13,11 @@ React service
+       ├── worker pool
+       ├── task snapshots
+       ├── progress context
+-      └── cancellation flag
++      ├── cancellation flag
++      └── EventBus publisher
+ ```
+ 
+-任务域类型位于 `domain/task.rs`，队列与执行编排位于 `application/task_service.rs`。Tauri 运行时状态通过 `AppState` 持有一个 TaskManager 实例。
++任务域类型位于 `domain/task.rs`，队列与执行编排位于 `application/task_service.rs`。Tauri 运行时状态通过 `AppState` 持有共享 EventBus 和 TaskManager；TaskManager 使用该 EventBus 发布任务生命周期快照。
