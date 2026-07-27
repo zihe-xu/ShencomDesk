@@ -12,6 +12,13 @@ const COMMANDS: &[&str] = &[
     "start_file_watch",
     "stop_file_watch",
     "clear_file_cache",
+    "install_plugin",
+    "list_plugins",
+    "get_plugin",
+    "enable_plugin",
+    "disable_plugin",
+    "execute_plugin_command",
+    "uninstall_plugin",
 ];
 
 fn main() {

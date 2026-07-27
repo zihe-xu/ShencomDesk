@@ -1,7 +1,10 @@
 use serde::Serialize;
 
 use crate::{
-    application::file_service::{FileServiceError, FileServiceErrorKind},
+    application::{
+        file_service::{FileServiceError, FileServiceErrorKind},
+        plugin_service::{PluginServiceError, PluginServiceErrorKind},
+    },
     utils::{AppError, AppErrorKind},
 };
 
@@ -21,6 +24,12 @@ pub enum IpcErrorCode {
     FileWatchUnavailable,
     FileWatchNotFound,
     FileOperationFailed,
+    PluginNotFound,
+    PluginAlreadyInstalled,
+    PluginInvalidPackage,
+    PluginConflict,
+    PluginExecutionFailed,
+    PluginOperationFailed,
     ValidationFailed,
     UnknownError,
 }
@@ -88,6 +97,39 @@ impl IpcError {
 
     pub fn file_operation_failed() -> Self {
         Self::new(IpcErrorCode::FileOperationFailed, "文件操作失败，请重试。")
+    }
+
+    pub fn for_plugin_operation(error: &PluginServiceError) -> Self {
+        match error.kind() {
+            PluginServiceErrorKind::InvalidInput => Self::validation(),
+            PluginServiceErrorKind::InvalidManifest
+            | PluginServiceErrorKind::PackageTooLarge
+            | PluginServiceErrorKind::RuntimeRejected => Self::new(
+                IpcErrorCode::PluginInvalidPackage,
+                "插件包无效或与当前版本不兼容。",
+            ),
+            PluginServiceErrorKind::NotFound => {
+                Self::new(IpcErrorCode::PluginNotFound, "未找到指定插件。")
+            }
+            PluginServiceErrorKind::AlreadyInstalled => {
+                Self::new(IpcErrorCode::PluginAlreadyInstalled, "该插件已经安装。")
+            }
+            PluginServiceErrorKind::Conflict => {
+                Self::new(IpcErrorCode::PluginConflict, "插件当前状态不允许此操作。")
+            }
+            PluginServiceErrorKind::ExecutionFailed => Self::new(
+                IpcErrorCode::PluginExecutionFailed,
+                "插件执行失败，请重试。",
+            ),
+            PluginServiceErrorKind::Io => Self::plugin_operation_failed(),
+        }
+    }
+
+    pub fn plugin_operation_failed() -> Self {
+        Self::new(
+            IpcErrorCode::PluginOperationFailed,
+            "插件操作失败，请重试。",
+        )
     }
 
     pub fn validation() -> Self {
@@ -189,5 +231,20 @@ mod tests {
         assert_eq!(payload.code, IpcErrorCode::FileAccessDenied);
         assert!(!serialized.contains("/Users/example"));
         assert_eq!(payload.message, "没有权限访问指定文件或目录。");
+    }
+
+    #[test]
+    fn maps_plugin_errors_without_exposing_paths_or_runtime_details() {
+        let internal = PluginServiceError::new(
+            PluginServiceErrorKind::RuntimeRejected,
+            "failed to compile /Users/example/private/evil.wasm at offset 19",
+        );
+        let payload = IpcError::for_plugin_operation(&internal);
+        let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+        assert_eq!(payload.code, IpcErrorCode::PluginInvalidPackage);
+        assert!(!serialized.contains("/Users/example"));
+        assert!(!serialized.contains("offset"));
+        assert_eq!(payload.message, "插件包无效或与当前版本不兼容。");
     }
 }

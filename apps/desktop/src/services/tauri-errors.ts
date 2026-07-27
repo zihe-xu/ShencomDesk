@@ -12,6 +12,12 @@ export const IPC_ERROR_CODES = [
   "file_watch_unavailable",
   "file_watch_not_found",
   "file_operation_failed",
+  "plugin_not_found",
+  "plugin_already_installed",
+  "plugin_invalid_package",
+  "plugin_conflict",
+  "plugin_execution_failed",
+  "plugin_operation_failed",
   "validation_failed",
   "unknown_error",
 ] as const;

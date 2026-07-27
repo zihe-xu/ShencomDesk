@@ -52,6 +52,18 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 
 `npm run test` 同时覆盖前端错误映射测试和合并后构建触发判定测试。
 
+## Phase 3：Plugin System
+
+插件内核采用版本化 Manifest 与 Wasmtime 沙箱，当前支持本地插件安装、启用、命令执行、禁用和卸载。ABI v1 默认不启用 WASI，也不允许任何宿主 import；每次调用具有独立 Store、fuel 与内存/实例限制。
+
+- 插件包：同一目录中的 `plugin.json` 与单个 `.wasm` 模块。
+- 安装后默认禁用，启用状态可跨应用重启恢复。
+- 插件生命周期通过共享 EventBus 发布领域事件。
+- React 统一通过 `apps/desktop/src/services/plugins.ts` 使用类型安全 IPC。
+- 插件市场、签名信任链、在线下载和企业策略属于后续独立能力。
+
+Manifest、ABI、生命周期、安全边界和 IPC 详见 [`docs/plugin-system.md`](docs/plugin-system.md)。
+
 ## 合并后自动化构建
 
 Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 macOS 与 Windows Runner 上构建 Tauri 安装包，并将产物保留 14 天。

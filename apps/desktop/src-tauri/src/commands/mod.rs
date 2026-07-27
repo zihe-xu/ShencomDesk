@@ -4,4 +4,5 @@ pub mod config;
 pub mod error;
 pub mod file;
 pub mod health;
+pub mod plugin;
 pub mod task;

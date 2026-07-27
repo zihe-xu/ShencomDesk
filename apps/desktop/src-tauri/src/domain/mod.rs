@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub mod config;
 pub mod event;
 pub mod file;
+pub mod plugin;
 pub mod task;
 
 pub mod user {
