@@ -54,11 +54,11 @@ jobs:
       matrix:
         include:
           - name: macOS Apple Silicon DMG
-            runner: macos-latest
+            runner: macos-26
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
           - name: macOS Intel DMG
-            runner: macos-latest
+            runner: macos-26-intel
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
           - name: Windows x64 MSI
