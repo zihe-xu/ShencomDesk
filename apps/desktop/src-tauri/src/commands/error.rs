@@ -190,12 +190,8 @@ impl IpcError {
             ),
             AppErrorKind::Validation => Self::validation(),
             AppErrorKind::Configuration | AppErrorKind::Internal => match fallback {
-                IpcErrorCode::ConfigLoadFailed => {
-                    Self::new(fallback, "无法读取应用配置，请重试。")
-                }
-                IpcErrorCode::ConfigSaveFailed => {
-                    Self::new(fallback, "无法保存应用配置，请重试。")
-                }
+                IpcErrorCode::ConfigLoadFailed => Self::new(fallback, "无法读取应用配置，请重试。"),
+                IpcErrorCode::ConfigSaveFailed => Self::new(fallback, "无法保存应用配置，请重试。"),
                 IpcErrorCode::ConfigResetFailed => {
                     Self::new(fallback, "无法恢复默认配置，请重试。")
                 }

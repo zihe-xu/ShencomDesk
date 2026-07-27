@@ -98,15 +98,9 @@ impl fmt::Debug for TauriUpdateBackend {
 #[async_trait]
 impl UpdateBackend for TauriUpdateBackend {
     async fn check(&self) -> Result<Option<UpdateInfo>, UpdateServiceError> {
-        let update = self
-            .build_updater()?
-            .check()
-            .await
-            .map_err(|error| {
-                UpdateServiceError::check_failed(format!(
-                    "update check request failed: {error}"
-                ))
-            })?;
+        let update = self.build_updater()?.check().await.map_err(|error| {
+            UpdateServiceError::check_failed(format!("update check request failed: {error}"))
+        })?;
 
         let info = update.as_ref().map(|update| UpdateInfo {
             current_version: update.current_version.clone(),
@@ -119,10 +113,7 @@ impl UpdateBackend for TauriUpdateBackend {
         Ok(info)
     }
 
-    async fn install(
-        &self,
-        on_progress: UpdateProgressHandler,
-    ) -> Result<(), UpdateServiceError> {
+    async fn install(&self, on_progress: UpdateProgressHandler) -> Result<(), UpdateServiceError> {
         let update = self.pending.lock().await.clone().ok_or_else(|| {
             UpdateServiceError::new(
                 UpdateServiceErrorKind::NoPendingUpdate,

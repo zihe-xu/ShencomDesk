@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    fmt,
-    sync::Arc,
-};
+use std::{error::Error, fmt, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -69,10 +65,7 @@ pub type UpdateProgressHandler = Arc<dyn Fn(UpdateProgress) + Send + Sync + 'sta
 pub trait UpdateBackend: Send + Sync {
     async fn check(&self) -> Result<Option<UpdateInfo>, UpdateServiceError>;
 
-    async fn install(
-        &self,
-        on_progress: UpdateProgressHandler,
-    ) -> Result<(), UpdateServiceError>;
+    async fn install(&self, on_progress: UpdateProgressHandler) -> Result<(), UpdateServiceError>;
 }
 
 /// Serializes update checks and installations while keeping Tauri-specific
@@ -196,10 +189,7 @@ mod tests {
                 .await
                 .expect("check should work")
                 .expect("update should exist");
-            let event = subscriber
-                .recv()
-                .await
-                .expect("update event should arrive");
+            let event = subscriber.recv().await.expect("update event should arrive");
 
             assert_eq!(update.version, "0.2.0");
             assert_eq!(event.event.kind(), EventKind::UpdateAvailable);

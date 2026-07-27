@@ -24,9 +24,7 @@ pub struct InstallUpdateRequest {
 
 /// Checks the fixed HTTPS release channel for a newer signed version.
 #[tauri::command]
-pub async fn check_for_updates(
-    state: State<'_, AppState>,
-) -> IpcResult<Option<UpdateInfo>> {
+pub async fn check_for_updates(state: State<'_, AppState>) -> IpcResult<Option<UpdateInfo>> {
     let service = state.update_service().clone();
     service
         .check()
@@ -81,8 +79,7 @@ fn map_update_error(operation: &'static str, error: UpdateServiceError) -> IpcEr
 mod tests {
     use super::*;
     use crate::{
-        application::update_service::UpdateServiceErrorKind,
-        commands::error::IpcErrorCode,
+        application::update_service::UpdateServiceErrorKind, commands::error::IpcErrorCode,
     };
 
     #[test]
