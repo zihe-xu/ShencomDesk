@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: signed-desktop-release-${{ github.ref }}
@@ -36,12 +36,14 @@ jobs:
         id: validate
         env:
           SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_CONFIGURED: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: node .github/scripts/validate-release.mjs
 
   release:
     name: Build ${{ matrix.name }}
     needs: preflight
+    permissions:
+      contents: write
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
