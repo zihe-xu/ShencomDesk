@@ -97,10 +97,27 @@ jobs:
         working-directory: apps/desktop
         run: npm run tauri -- icon app-icon.svg
 
-      - name: Build Tauri desktop bundles
-        id: tauri_build
+      - name: Build Tauri desktop bundles (macOS)
+        id: tauri_build_unix
+        if: runner.os != 'Windows'
         working-directory: apps/desktop
-        run: node ../../.github/scripts/run-tauri-build.mjs
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run tauri -- build 2>&1 | tee tauri-build.log
+
+      - name: Build Tauri desktop bundles (Windows)
+        id: tauri_build_windows
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $logPath = Join-Path $PWD "tauri-build.log"
+          & npm.cmd run tauri -- build 2>&1 | Tee-Object -FilePath $logPath
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
 
       - name: Upload failed build diagnostics
         id: diagnostics
@@ -109,7 +126,7 @@ jobs:
         with:
           name: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}-diagnostics
           path: apps/desktop/tauri-build.log
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload desktop bundles
@@ -131,7 +148,7 @@ jobs:
           TRIGGER: ${{ needs.prepare.outputs.trigger }}
           ARTIFACT_NAME: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}
           DIAGNOSTICS_NAME: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}-diagnostics
-          BUILD_OUTCOME: ${{ steps.tauri_build.outcome || 'not-run' }}
+          BUILD_OUTCOME: ${{ runner.os == 'Windows' && steps.tauri_build_windows.outcome || steps.tauri_build_unix.outcome || 'not-run' }}
           ARTIFACT_OUTCOME: ${{ steps.artifact.outcome || 'not-run' }}
           DIAGNOSTICS_OUTCOME: ${{ steps.diagnostics.outcome || 'not-run' }}
           JOB_STATUS: ${{ job.status }}
