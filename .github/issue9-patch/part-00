@@ -1,0 +1,150 @@
+diff --git a/apps/desktop/src-tauri/Cargo.lock b/apps/desktop/src-tauri/Cargo.lock
+index c99920a..e7460a8 100644
+--- a/apps/desktop/src-tauri/Cargo.lock
++++ b/apps/desktop/src-tauri/Cargo.lock
+@@ -3117,6 +3117,7 @@ dependencies = [
+  "sqlx",
+  "tauri",
+  "tauri-build",
++ "tokio",
+  "tracing",
+  "tracing-appender",
+  "tracing-subscriber",
+diff --git a/apps/desktop/src-tauri/Cargo.toml b/apps/desktop/src-tauri/Cargo.toml
+index ab80c4e..86d2ecf 100644
+--- a/apps/desktop/src-tauri/Cargo.toml
++++ b/apps/desktop/src-tauri/Cargo.toml
+@@ -17,6 +17,7 @@ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+ tauri = { version = "2", features = [] }
++tokio = { version = "1", features = ["sync"] }
+ tracing = "0.1"
+ tracing-appender = "0.2"
+ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+diff --git a/apps/desktop/src-tauri/src/app/lifecycle.rs b/apps/desktop/src-tauri/src/app/lifecycle.rs
+index 63ac244..2be3b46 100644
+--- a/apps/desktop/src-tauri/src/app/lifecycle.rs
++++ b/apps/desktop/src-tauri/src/app/lifecycle.rs
+@@ -2,6 +2,7 @@ use tauri::{AppHandle, Manager, RunEvent};
+ 
+ use crate::{
+     app::state::AppState,
++    domain::event::AppEvent,
+     infrastructure::{
+         database::service::DatabaseService,
+         logging::{self, LoggingGuards},
+@@ -9,7 +10,10 @@ use crate::{
+ };
+ 
+ /// Called once the Tauri runtime has registered shared state.
+-pub fn on_ready(_app: &AppHandle) {
++pub fn on_ready(app: &AppHandle) {
++    app.state::<AppState>()
++        .event_bus()
++        .publish(AppEvent::ApplicationReady);
+     tracing::info!("application runtime ready");
+     logging::record_operation("application.ready", "success");
+ }
+@@ -25,7 +29,9 @@ pub fn on_exit(app: &AppHandle) {
+     tracing::info!("application shutdown requested");
+     logging::record_operation("application.exit", "requested");
+ 
+-    let cancelled_tasks = app.state::<AppState>().task_manager().shutdown();
++    let state = app.state::<AppState>();
++    state.event_bus().publish(AppEvent::ApplicationExiting);
++    let cancelled_tasks = state.task_manager().shutdown();
+     tracing::info!(cancelled_tasks, "task manager stopped");
+     logging::record_operation("task_manager.shutdown", "success");
+ 
+diff --git a/apps/desktop/src-tauri/src/app/state.rs b/apps/desktop/src-tauri/src/app/state.rs
+index d5c7aac..a34e0d9 100644
+--- a/apps/desktop/src-tauri/src/app/state.rs
++++ b/apps/desktop/src-tauri/src/app/state.rs
+@@ -1,19 +1,24 @@
+ use std::time::{Duration, Instant};
+ 
+-use crate::application::task_service::TaskManager;
++use crate::application::{event_bus::EventBus, task_service::TaskManager};
+ 
+ /// Shared runtime state managed by Tauri.
+ #[derive(Debug)]
+ pub struct AppState {
+     started_at: Instant,
++    event_bus: EventBus,
+     task_manager: TaskManager,
+ }
+ 
+ impl AppState {
+     pub fn new() -> Self {
++        let event_bus = EventBus::default();
++        let task_manager = TaskManager::with_events(event_bus.clone());
++
+         Self {
+             started_at: Instant::now(),
+-            task_manager: TaskManager::default(),
++            event_bus,
++            task_manager,
+         }
+     }
+ 
+@@ -21,6 +26,10 @@ impl AppState {
+         self.started_at.elapsed()
+     }
+ 
++    pub fn event_bus(&self) -> &EventBus {
++        &self.event_bus
++    }
++
+     pub fn task_manager(&self) -> &TaskManager {
+         &self.task_manager
+     }
+@@ -31,3 +40,33 @@ impl Default for AppState {
+         Self::new()
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use crate::domain::event::EventKind;
++
++    use super::*;
++
++    #[test]
++    fn task_manager_and_modules_share_the_application_event_bus() {
++        let state = AppState::new();
++        let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
++        let created = state
++            .task_manager()
++            .submit("shared bus", 1, |context| {
++                context.report_progress(1);
++                Ok(())
++            })
++            .expect("task should be queued");
++
++        let event = tauri::async_runtime::block_on(async {
++            subscriber
++                .recv()
++                .await
++                .expect("task finish event should arrive")
++        });
++
++        assert_eq!(event.event.kind(), EventKind::TaskFinished);
++        assert!(state.task_manager().get(&created.id).is_some());
++    }
++}
+diff --git a/apps/desktop/src-tauri/src/application/event_bus.rs b/apps/desktop/src-tauri/src/application/event_bus.rs
+new file mode 100644
+index 0000000..40eb5c1
+--- /dev/null
++++ b/apps/desktop/src-tauri/src/application/event_bus.rs
+@@ -0,0 +1,264 @@
++use std::{
++    collections::BTreeSet,
++    error::Error,
++    fmt,
++    sync::{
++        atomic::{AtomicU64, Ordering},
++        Arc, Mutex,
++    },
++    time::{SystemTime, UNIX_EPOCH},
