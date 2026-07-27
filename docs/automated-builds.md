@@ -8,7 +8,7 @@
 - `Post-merge desktop build`：代码进入 `main` 后生成 macOS、Windows 安装包并上传短期 Artifact。
 - `Signed desktop release`：版本标签触发，使用受保护密钥生成 Tauri Updater 签名、`latest.json` 和 Draft GitHub Release。
 
-普通构建不读取发布密钥；只有标签发布具有 `contents: write` 和签名 Secret。
+普通构建不读取发布密钥；只有标签发布的 release Job 具有 `contents: write` 和签名 Secret。
 
 ## 合并后构建触发规则
 
@@ -65,14 +65,14 @@ shendesk-<platform>-<short-sha>-diagnostics
 
 ## 签名发布
 
-`.github/workflows/release.yml` 只响应 `v*` 标签，不响应 Pull Request。预检脚本 `.github/scripts/validate-release.mjs` 在运行任何跨平台打包前验证版本、标签、release-only Tauri config 和签名材料。
+`.github/workflows/release.yml` 只响应 `v*` 标签，不响应 Pull Request。预检脚本 `.github/scripts/validate-release.mjs` 在运行任何跨平台打包前验证版本、标签、release-only Tauri config 和签名材料配置状态；私钥正文不会进入预检进程。
 
-发布矩阵：
+发布矩阵使用固定、原生架构 Runner：
 
 | 目标 | Runner | Bundle | Updater artifact |
 |---|---|---|---|
-| macOS Apple Silicon | `macos-latest` | DMG | `.app.tar.gz` + `.sig` |
-| macOS Intel | `macos-latest` | DMG | `.app.tar.gz` + `.sig` |
+| macOS Apple Silicon | `macos-26` | DMG | `.app.tar.gz` + `.sig` |
+| macOS Intel | `macos-26-intel` | DMG | `.app.tar.gz` + `.sig` |
 | Windows x64 | `windows-2022` | MSI | `.msi` + `.sig` |
 
 `tauri-apps/tauri-action` 将平台资产和 `latest.json` 上传到同一 Draft Release。Draft 必须在人工核验后发布，发布后客户端固定的 `/releases/latest/download/latest.json` 才能发现它。
@@ -91,7 +91,7 @@ shendesk-<platform>-<short-sha>-diagnostics
 
 ### 合并后构建
 
-- Workflow 仅授予 `contents: read`。
+- Workflow 仅授予 `contents: read` 权限。
 - 检出合并后的 `merge_commit_sha`，不直接构建未受信任的 PR Head。
 - Checkout 不保留 GitHub 凭据。
 - 不读取代码签名、发布或更新签名密钥。
@@ -99,8 +99,9 @@ shendesk-<platform>-<short-sha>-diagnostics
 ### 签名发布
 
 - 仅受保护版本标签触发，不在 PR 代码上下文暴露 Secret。
-- 预检不输出公钥或私钥内容。
-- 发布 Job 只把私钥注入 Tauri 构建进程。
+- Workflow 默认 `contents: read`；只有 release Job 提升为 `contents: write`。
+- 预检只接收私钥是否已配置的布尔值，不接收或输出私钥正文。
+- 发布 Job 只把私钥注入最终 Tauri 签名步骤。
 - 持有私钥的 `tauri-action` 使用完整提交 SHA 固定版本，避免可变标签改变执行代码。
 - Release 默认为 Draft，避免未审核清单立即成为 `latest`。
 - 更新签名和 OS 平台代码签名是不同信任层；Apple notarization 与 Windows Authenticode 需独立配置。
@@ -124,6 +125,6 @@ node --test .github/scripts/resolve-post-merge-build.test.mjs
 node --test .github/scripts/validate-release.test.mjs
 ```
 
-测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Windows Runner、发布版本漂移、错误标签、缺失密钥、release-only updater artifacts，以及发布 Workflow 的 tag-only/Secret 边界。
+测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Windows Runner、发布版本漂移、错误标签、缺失密钥、release-only updater artifacts、发布 Workflow 的 tag-only/Secret 边界，以及 ARM/Intel 原生 macOS Runner 约束。
 
 Workflow 合并后，应通过 `workflow_dispatch` 验证普通 macOS/Windows 打包；首次签名发布则在配置密钥后使用新的 SemVer 标签，并在 Draft Release 中核对所有平台资产与 `latest.json`。
