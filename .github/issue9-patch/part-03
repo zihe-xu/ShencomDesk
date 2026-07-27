@@ -1,6 +1,6 @@
 -            return false;
 -        };
-+        let snapshot = {
++        {
 +            let mut tasks = write_records(&self.tasks);
 +            let Some(record) = tasks.get_mut(&self.id) else {
 +                return false;
