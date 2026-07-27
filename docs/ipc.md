@@ -20,12 +20,14 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `stop_file_watch` | `{ watchId: string }` | watch ID |
 | `clear_file_cache` | 无 | 无 |
 | `install_plugin` | `{ request: { manifestPath } }` | `PluginSnapshot` |
-| `list_plugins` | 无 | `PluginSnapshot[]` |
+| `list_plugins` | 无 | ` `PluginSnapsh[]` |
 | `get_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `enable_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `disable_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `execute_plugin_command` | `{ request: { pluginId, command } }` | `PluginExecution` |
 | `uninstall_plugin` | `{ pluginId }` | plugin ID |
+| `check_for_updates` | 无 | `UpdateSnapshot | null` |
+| `install_update` | `{ onEvent: Channel, restart?: boolean }` | `UpdateInstallResult` |
 
 ## 分层规则
 
@@ -37,7 +39,7 @@ React Service
   → Infrastructure Adapter
 ```
 
-Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O 或 WASM 运行时逻辑。插件 Command 只把请求委托给 `PluginService`。
+Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O 或 WASM 运行时逻辑。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client 或处理签名。
 
 ## 稳定错误协议
 
@@ -73,6 +75,12 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 | `plugin_conflict` | 插件状态不允许当前操作 |
 | `plugin_execution_failed` | 命令或生命周期 hook trap/失败 |
 | `plugin_operation_failed` | 其他插件存储操作失败 |
+| `update_not_configured` | 当前构建没有内嵌更新公钥 |
+| `update_unsupported` | 当前平台不支持自动更新 |
+| `update_busy` | 另一个更新操作正在运行 |
+| `update_not_available` | 没有经过检查的待安装更新 |
+| `update_check_failed` | 更新检查失败 |
+| `update_install_failed` | 下载、签名验证或安装失败 |
 | `validation_failed` | 输入未通过验证 |
 | `unknown_error` | 前端收到未知或不可信错误载荷 |
 
@@ -86,6 +94,7 @@ Rust 端把原始 `AppError`、TaskManager、文件服务和插件运行时诊�
 - 配置原始内容
 - worker panic 或任务内部错误细节
 - Manifest 解析位置、WASM 编译详情或 trap 文本
+- 更新 endpoint、签名、清单解析和安装器内部错误
 
 前端只接受白名单中的错误码。未知对象、原生 `Error` 或空消息都会归一化为：
 
@@ -107,11 +116,21 @@ const result = await executePluginCommand({
 });
 ```
 
-所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。配置、任务、文件和插件的类型安全封装分别位于 `src/services/config.ts`、`src/services/tasks.ts`、`src/services/files.ts` 和 `src/services/plugins.ts`。纯错误映射位于 `src/services/tauri-errors.ts`。
+```ts
+const update = await checkForUpdates();
+if (update) {
+  await installUpdate({
+    restart: true,
+    onProgress: (event) => console.log(event),
+  });
+}
+```
+
+所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。配置、任务、文件、插件和更新的类型安全封装分别位于 `src/services/config.ts`、`src/services/tasks.ts`、`src/services/files.ts`、`src/services/plugins.ts` 和 `src/services/updates.ts`。纯错误映射位于 `src/services/tauri-errors.ts`。
 
 ## 测试
 
 CI 同时执行：
 
-- Rust：验证错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap 和持久化恢复。
-- TypeScript：验证已知配置/任务/文件/插件错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。
+- Rust：验证错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件与进度协议。
+- TypeScript：验证已知配置/任务/文件/插件/更新错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。

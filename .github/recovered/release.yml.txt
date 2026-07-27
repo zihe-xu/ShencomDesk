@@ -1,0 +1,115 @@
+name: Signed desktop release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signed-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate release inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Validate versions, tag, updater config, and signing material
+        id: validate
+        env:
+          SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node .github/scripts/validate-release.mjs
+
+  release:
+    name: Build ${{ matrix.name }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # Each job merges its platform into the release-level latest.json.
+      # Serialize jobs to avoid concurrent read/delete/upload races.
+      max-parallel: 1
+      matrix:
+        include:
+          - name: macOS Apple Silicon DMG
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
+          - name: macOS Intel DMG
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg --config src-tauri/tauri.release.conf.json
+          - name: Windows x64 MSI
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles msi --config src-tauri/tauri.release.conf.json
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Set up Rust target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          key: release-${{ matrix.target }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate platform application icons
+        working-directory: apps/desktop
+        run: npm run tauri -- icon app-icon.svg
+
+      - name: Build, sign, and upload updater release assets
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: ShenDesk ${{ github.ref_name }}
+          releaseBody: Signed ShenDesk desktop installers and Tauri updater metadata.
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: false
+          retryAttempts: 2
+          args: ${{ matrix.args }}

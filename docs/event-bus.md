@@ -118,6 +118,16 @@ plugin_removed
 
 事件只包含 Manifest、持久化状态、命令名、返回码与 fuel 消耗等领域数据，不包含来源路径、WASM 字节、编译诊断或 trap 详情。启动恢复失败的插件被持久化为 disabled，并发布 `plugin_disabled`；应用退出时的临时 runtime stop 不改变持久化 enabled 偏好，因此不伪造状态变更事件。
 
+## UpdateService 集成
+
+检查到高于当前版本的签名发布时，`UpdateService` 发布：
+
+```text
+update_available { version }
+```
+
+事件只包含目标 SemVer，不包含下载 URL、签名、清单原文或私钥。没有更新时不发布；安装进度是面向发起 WebView 的 IPC Channel，不进入全局 EventBus，避免高频下载块占用广播容量。
+
 ## 应用生命周期
 
 - 完成共享状态注册后发布 `application_ready`。
@@ -136,4 +146,4 @@ EventBus 是进程内通信设施；应用退出后事件不会保留。插件�
 
 ## 测试
 
-测试覆盖多 subscriber fan-out、类别过滤、lag 检测、有序 sequence、零 subscriber 发布、稳定 wire format、TaskManager 生命周期、插件生命周期事件顺序，以及 AppState 内核心服务共享同一 EventBus。
+测试覆盖多 subscriber fan-out、类别过滤、lag 检测、有序 sequence、零 subscriber 发布、稳定 wire format、TaskManager 生命周期、插件生命周期事件顺序、更新可用事件，以及 AppState 内核心服务共享同一 EventBus。
