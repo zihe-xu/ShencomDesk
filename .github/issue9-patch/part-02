@@ -103,48 +103,48 @@
 +        assert_eq!(bus.subscriber_count(), 0);
 +    }
 +}
-+diff --git a/apps/desktop/src-tauri/src/application/mod.rs b/apps/desktop/src-tauri/src/application/mod.rs
-+index 451549d..973d088 100644
-+--- a/apps/desktop/src-tauri/src/application/mod.rs
-++++ b/apps/desktop/src-tauri/src/application/mod.rs
-+@@ -2,6 +2,7 @@
-+ 
-+ pub mod config_repository;
-+ pub mod config_service;
-++pub mod event_bus;
-+ pub mod task_service;
-+ 
-+ pub mod health_service {
-+diff --git a/apps/desktop/src-tauri/src/application/task_service.rs b/apps/desktop/src-tauri/src/application/task_service.rs
-+index b990ef5..0edf356 100644
-+--- a/apps/desktop/src-tauri/src/application/task_service.rs
-++++ b/apps/desktop/src-tauri/src/application/task_service.rs
-+@@ -11,7 +11,13 @@ use std::{
-+ 
-+ use tauri::async_runtime::{channel, spawn, spawn_blocking, Mutex as AsyncMutex, Receiver, Sender};
-+ 
-+-use crate::domain::task::{TaskId, TaskSnapshot, TaskState};
-++use crate::{
-++    application::event_bus::EventBus,
-++    domain::{
-++        event::AppEvent,
-++        task::{TaskId, TaskSnapshot, TaskState},
-++    },
-++};
-+ 
-+ const DEFAULT_QUEUE_CAPACITY: usize = 128;
-+ const DEFAULT_WORKER_COUNT: usize = 2;
-+@@ -80,6 +86,7 @@ pub struct TaskContext {
-+     id: TaskId,
-+     tasks: TaskRecords,
-+     cancellation: Arc<AtomicBool>,
-++    events: EventBus,
-+ }
-+ 
-+ impl TaskContext {
-+@@ -98,18 +105,25 @@ impl TaskContext {
-+             return false;
-+         }
-+ 
-+-        let mut tasks = write_records(&self.tasks);
-+-        let Some(record) = tasks.get_mut(&self.id) else {
+diff --git a/apps/desktop/src-tauri/src/application/mod.rs b/apps/desktop/src-tauri/src/application/mod.rs
+index 451549d..973d088 100644
+--- a/apps/desktop/src-tauri/src/application/mod.rs
++++ b/apps/desktop/src-tauri/src/application/mod.rs
+@@ -2,6 +2,7 @@
+ 
+ pub mod config_repository;
+ pub mod config_service;
++pub mod event_bus;
+ pub mod task_service;
+ 
+ pub mod health_service {
+diff --git a/apps/desktop/src-tauri/src/application/task_service.rs b/apps/desktop/src-tauri/src/application/task_service.rs
+index b990ef5..0edf356 100644
+--- a/apps/desktop/src-tauri/src/application/task_service.rs
++++ b/apps/desktop/src-tauri/src/application/task_service.rs
+@@ -11,7 +11,13 @@ use std::{
+ 
+ use tauri::async_runtime::{channel, spawn, spawn_blocking, Mutex as AsyncMutex, Receiver, Sender};
+ 
+-use crate::domain::task::{TaskId, TaskSnapshot, TaskState};
++use crate::{
++    application::event_bus::EventBus,
++    domain::{
++        event::AppEvent,
++        task::{TaskId, TaskSnapshot, TaskState},
++    },
++};
+ 
+ const DEFAULT_QUEUE_CAPACITY: usize = 128;
+ const DEFAULT_WORKER_COUNT: usize = 2;
+@@ -80,6 +86,7 @@ pub struct TaskContext {
+     id: TaskId,
+     tasks: TaskRecords,
+     cancellation: Arc<AtomicBool>,
++    events: EventBus,
+ }
+ 
+ impl TaskContext {
+@@ -98,18 +105,25 @@ impl TaskContext {
+             return false;
+         }
+ 
+-        let mut tasks = write_records(&self.tasks);
+-        let Some(record) = tasks.get_mut(&self.id) else {
