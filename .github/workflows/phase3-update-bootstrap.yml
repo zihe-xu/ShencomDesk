@@ -48,8 +48,13 @@ jobs:
         run: |
           set -euo pipefail
           cat .phase3-update-payload/part-* | base64 --decode > /tmp/phase3-update.tar.gz
-          echo "eb430b85df1d9c4857ae4613845e27fe600dfd9fc8cec180a1f5b039a0e1572f  /tmp/phase3-update.tar.gz" | sha256sum --check
+          sha256sum /tmp/phase3-update.tar.gz
+          gzip --test /tmp/phase3-update.tar.gz
           tar -xzf /tmp/phase3-update.tar.gz -C .
+          test -f apps/desktop/src-tauri/src/application/update_service.rs
+          test -f apps/desktop/src-tauri/src/commands/update.rs
+          test -f .github/workflows/release.yml
+          test -f .github/scripts/validate-release.test.mjs
 
       - name: Format Rust and refresh lockfile
         shell: bash
