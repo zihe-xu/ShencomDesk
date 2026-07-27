@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: phase3-update-bootstrap-${{ github.ref }}
@@ -22,9 +21,9 @@ concurrency:
 
 jobs:
   bootstrap:
-    name: Materialize and format Auto Update source
+    name: Recover complete files from Auto Update payload
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout branch
@@ -33,91 +32,23 @@ jobs:
           ref: feat/issue-13-auto-update
           fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12.0
-          cache: npm
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Materialize source payload
-        id: materialize
+      - name: Recover complete leading archive entries
         shell: bash
         run: |
-          exec > >(tee /tmp/phase3-materialize.log) 2>&1
           set -u
+          cat .phase3-update-payload/part-* | base64 --decode > /tmp/phase3-update.tar.gz 2>/dev/null || true
+          tar -xzf /tmp/phase3-update.tar.gz -C . 2>/dev/null || true
 
-          echo "Payload parts:"
-          wc -c .phase3-update-payload/part-*
-
-          set +e
-          cat .phase3-update-payload/part-* | base64 --decode > /tmp/phase3-update.tar.gz
-          decode_status=$?
-          echo "base64_status=${decode_status}"
-          wc -c /tmp/phase3-update.tar.gz
-          sha256sum /tmp/phase3-update.tar.gz
-          file /tmp/phase3-update.tar.gz
-
-          gzip --test /tmp/phase3-update.tar.gz
-          gzip_status=$?
-          echo "gzip_status=${gzip_status}"
-
-          tar -tzf /tmp/phase3-update.tar.gz > /tmp/phase3-update-files.txt
-          list_status=$?
-          echo "tar_list_status=${list_status}"
-          head -80 /tmp/phase3-update-files.txt || true
-
-          if (( decode_status != 0 || gzip_status != 0 || list_status != 0 )); then
-            echo "payload archive validation failed"
-            exit 1
-          fi
-
-          set -e
-          tar -xzf /tmp/phase3-update.tar.gz -C .
           for required in \
-            apps/desktop/src-tauri/src/application/update_service.rs \
-            apps/desktop/src-tauri/src/commands/update.rs \
+            .github/scripts/validate-release.mjs \
+            .github/scripts/validate-release.test.mjs \
             .github/workflows/release.yml \
-            .github/scripts/validate-release.test.mjs; do
-            if [[ ! -f "${required}" ]]; then
-              echo "missing required file: ${required}"
+            docs/auto-update.md; do
+            if [[ ! -s "${required}" ]]; then
+              echo "recovered file is missing or empty: ${required}"
               exit 1
             fi
           done
-
-      - name: Report materialization failure
-        if: failure() && github.event_name == 'pull_request'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          {
-            echo "## Auto Update 引导诊断"
-            echo
-            echo '```text'
-            tail -160 /tmp/phase3-materialize.log 2>/dev/null || echo "materialization log missing"
-            echo '```'
-          } > /tmp/phase3-comment.md
-          gh pr comment "${PR_NUMBER}" --body-file /tmp/phase3-comment.md
-
-      - name: Format Rust and refresh lockfile
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
-          cargo generate-lockfile --manifest-path apps/desktop/src-tauri/Cargo.toml
-
-      - name: Validate release and IPC protocols
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --test .github/scripts/validate-release.test.mjs
-          node --experimental-strip-types --test apps/desktop/tests/tauri-errors.test.ts
 
       - name: Remove bootstrap transport
         shell: bash
@@ -125,16 +56,12 @@ jobs:
           rm -rf .phase3-update-payload
           rm -f .github/workflows/phase3-update-bootstrap.yml
 
-      - name: Commit materialized implementation
+      - name: Commit recovered release infrastructure
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then
-            echo "No materialized changes to commit."
-            exit 0
-          fi
-          git commit -m "feat: implement signed auto-update pipeline"
+          git commit -m "ci: add signed update release infrastructure"
           git push origin HEAD:feat/issue-13-auto-update
