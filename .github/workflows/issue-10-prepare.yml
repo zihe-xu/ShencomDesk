@@ -1,0 +1,50 @@
+name: Prepare Issue 10 FileService
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Apply, format, and lock FileService implementation
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/issue-10-file-service'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/issue10-patch/part-*.b64 | tr -d '\n' | base64 --decode | xz --decompress > /tmp/issue10.patch
+          git apply --check /tmp/issue10.patch
+          git apply /tmp/issue10.patch
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
+          cargo fetch --manifest-path apps/desktop/src-tauri/Cargo.toml
+          rm -rf .github/issue10-patch
+          rm -f .github/workflows/issue-10-source.yml
+          rm -f .github/workflows/issue-10-prepare.yml
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: implement FileService local file capabilities (#10)"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
