@@ -122,6 +122,23 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
   assert.match(workflow, /retention-days:\s+7/);
 });
 
+test("Tauri bundle config declares all generated desktop icons", () => {
+  const config = JSON.parse(
+    readFileSync(
+      new URL("../../apps/desktop/src-tauri/tauri.conf.json", import.meta.url),
+      "utf8",
+    ),
+  );
+
+  assert.deepEqual(config.bundle.icon, [
+    "icons/32x32.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/icon.icns",
+    "icons/icon.ico",
+  ]);
+});
+
 test("Windows build invokes npm through cmd.exe", () => {
   const command = resolveBuildProcess("win32", {
     ComSpec: "C:\\Windows\\System32\\cmd.exe",
