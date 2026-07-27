@@ -1,0 +1,78 @@
+name: Windows desktop diagnostic
+
+on:
+  push:
+    branches:
+      - ci/issue-37-windows-diagnostic
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    name: Diagnose Windows packaging
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate platform application icons
+        working-directory: apps/desktop
+        run: npm run tauri -- icon app-icon.svg
+
+      - name: Build and capture diagnostics
+        id: build
+        continue-on-error: true
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $logPath = Join-Path $PWD "tauri-build.log"
+          "Windows Tauri diagnostic started at $(Get-Date -Format o)" | Set-Content -Path $logPath -Encoding utf8
+          & npm.cmd run tauri -- build *>> $logPath
+          $exitCode = $LASTEXITCODE
+          "Tauri build exit code: $exitCode" | Add-Content -Path $logPath -Encoding utf8
+          "exit_code=$exitCode" >> $env:GITHUB_OUTPUT
+          Get-Content -Path $logPath -Tail 160
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Upload Windows diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-tauri-diagnostic-${{ github.sha }}
+          path: apps/desktop/tauri-build.log
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve build failure
+        if: steps.build.outcome == 'failure'
+        shell: pwsh
+        run: exit 1
