@@ -20,14 +20,14 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `stop_file_watch` | `{ watchId: string }` | watch ID |
 | `clear_file_cache` | 无 | 无 |
 | `install_plugin` | `{ request: { manifestPath } }` | `PluginSnapshot` |
-| `list_plugins` | 无 | ` `PluginSnapsh[]` |
+| `list_plugins` | 无 | `PluginSnapshot[]` |
 | `get_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `enable_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `disable_plugin` | `{ pluginId }` | `PluginSnapshot` |
 | `execute_plugin_command` | `{ request: { pluginId, command } }` | `PluginExecution` |
 | `uninstall_plugin` | `{ pluginId }` | plugin ID |
-| `check_for_updates` | 无 | `UpdateSnapshot | null` |
-| `install_update` | `{ onEvent: Channel, restart?: boolean }` | `UpdateInstallResult` |
+| `check_for_updates` | 无 | `UpdateInfo | null` |
+| `install_update` | `{ request: { restart? }, onProgress: Channel }` | `UpdateInstallResult` |
 
 ## 分层规则
 
@@ -39,7 +39,7 @@ React Service
   → Infrastructure Adapter
 ```
 
-Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O 或 WASM 运行时逻辑。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client 或处理签名。
+Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O、WASM 运行时逻辑或更新网络请求。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client、读取更新地址或处理签名。
 
 ## 稳定错误协议
 
@@ -76,25 +76,25 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 | `plugin_execution_failed` | 命令或生命周期 hook trap/失败 |
 | `plugin_operation_failed` | 其他插件存储操作失败 |
 | `update_not_configured` | 当前构建没有内嵌更新公钥 |
-| `update_unsupported` | 当前平台不支持自动更新 |
-| `update_busy` | 另一个更新操作正在运行 |
+| `update_busy` | 另一个更新检查或安装正在运行 |
 | `update_not_available` | 没有经过检查的待安装更新 |
 | `update_check_failed` | 更新检查失败 |
 | `update_install_failed` | 下载、签名验证或安装失败 |
+| `update_operation_failed` | 其他内部更新服务错误 |
 | `validation_failed` | 输入未通过验证 |
 | `unknown_error` | 前端收到未知或不可信错误载荷 |
 
 ## 信息脱敏
 
-Rust 端把原始 `AppError`、TaskManager、文件服务和插件运行时诊断写入日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与固定消息，不包含：
+Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和更新后端诊断写入本地日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与固定消息，不包含：
 
-- 本地文件路径
-- SQL 或数据库内部文本
-- Rust 类型和堆栈细节
-- 配置原始内容
-- worker panic 或任务内部错误细节
-- Manifest 解析位置、WASM 编译详情或 trap 文本
-- 更新 endpoint、签名、清单解析和安装器内部错误
+- 本地文件路径；
+- SQL 或数据库内部文本；
+- Rust 类型和堆栈细节；
+- 配置原始内容；
+- worker panic 或任务内部错误细节；
+- Manifest 解析位置、WASM 编译详情或 trap 文本；
+- 更新 endpoint、签名、清单、请求头和安装器内部错误。
 
 前端只接受白名单中的错误码。未知对象、原生 `Error` 或空消息都会归一化为：
 
@@ -107,6 +107,8 @@ Rust 端把原始 `AppError`、TaskManager、文件服务和插件运行时诊�
 
 ## 前端使用
 
+插件：
+
 ```ts
 const installed = await installPlugin({ manifestPath });
 await enablePlugin(installed.manifest.id);
@@ -115,6 +117,8 @@ const result = await executePluginCommand({
   command: "hello",
 });
 ```
+
+更新：
 
 ```ts
 const update = await checkForUpdates();
@@ -132,5 +136,5 @@ if (update) {
 
 CI 同时执行：
 
-- Rust：验证错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件与进度协议。
+- Rust：验证错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
 - TypeScript：验证已知配置/任务/文件/插件/更新错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。
