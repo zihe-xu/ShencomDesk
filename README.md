@@ -32,8 +32,16 @@ npm run tauri -- dev
 
 ## 构建
 
+前端构建：
+
 ```bash
 npm run build
+```
+
+生成桌面安装包前，先根据 `apps/desktop/app-icon.svg` 生成各平台图标，再执行 Tauri Build：
+
+```bash
+npm run tauri -- icon app-icon.svg
 npm run tauri -- build
 ```
 
