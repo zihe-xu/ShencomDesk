@@ -38,7 +38,7 @@ Artifact 保留 14 天。找不到预期安装包时，上传步骤会失败，�
 
 ## 构建诊断
 
-`.github/scripts/run-tauri-build.mjs` 以跨平台方式运行 Tauri CLI，同时将标准输出和标准错误实时写入控制台与 `tauri-build.log`。
+macOS 使用 Bash 的 `pipefail` 与 `tee`，Windows 使用 PowerShell 的 `Tee-Object`，将 Tauri 的完整标准输出和标准错误同时写入控制台与 `apps/desktop/tauri-build.log`。原生 Shell 直接保留 Tauri 命令退出码，不再依赖额外的进程包装脚本。
 
 平台构建失败时，Workflow 会上传：
 
@@ -46,7 +46,7 @@ Artifact 保留 14 天。找不到预期安装包时，上传步骤会失败，�
 shendesk-<platform>-<short-sha>-diagnostics
 ```
 
-诊断 Artifact 保留 7 天。成功构建不会上传诊断日志，避免重复保存正常构建输出。
+诊断 Artifact 保留 7 天。诊断日志缺失会使上传步骤明确失败；成功构建不会上传诊断日志，避免重复保存正常构建输出。
 
 ## 构建判定
 
@@ -71,7 +71,23 @@ shendesk-<platform>-<short-sha>-diagnostics
 
 ## 应用图标
 
-仓库保留可缩放源文件 `apps/desktop/app-icon.svg`。构建 Runner 使用 Tauri CLI 在打包前生成当前平台需要的 `.icns`、`.ico` 与 PNG 图标，避免平台打包因为缺失图标格式失败。
+仓库保留可缩放源文件 `apps/desktop/app-icon.svg`。构建 Runner 在打包前执行：
+
+```bash
+npm run tauri -- icon app-icon.svg
+```
+
+该命令在 `apps/desktop/src-tauri/icons` 中生成桌面平台图标。`tauri.conf.json > bundle > icon` 显式声明以下文件：
+
+```text
+icons/32x32.png
+icons/128x128.png
+icons/128x128@2x.png
+icons/icon.icns
+icons/icon.ico
+```
+
+Windows WiX / NSIS 打包依赖 `.ico`，macOS App / DMG 打包依赖 `.icns`。仅生成文件但不在 Bundle 配置中声明，会导致平台安装包无法稳定找到对应图标。
 
 ## 验证
 
@@ -94,7 +110,9 @@ node --test .github/scripts/resolve-post-merge-build.test.mjs
 3. 关闭但未合并跳过构建；
 4. 手动触发执行构建；
 5. 合并事件缺少 `merge_commit_sha` 时安全失败；
-6. Windows Runner 固定为 `windows-2022`，且失败诊断 Artifact 配置存在。
+6. Windows Runner 固定为 `windows-2022`；
+7. macOS / Windows 原生日志捕获与失败诊断配置存在；
+8. Tauri Bundle 显式声明 PNG、ICNS 和 ICO 图标。
 
 Workflow 合并后，应通过一次 `workflow_dispatch` 验证真实 macOS、Windows 打包环境；后续 PR 则分别用普通合并和带 `skip-build` 标签的合并验证线上事件路径。
 
