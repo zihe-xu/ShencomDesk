@@ -22,8 +22,10 @@
 
 Workflow 使用原生 GitHub-hosted Runner：
 
-- macOS：生成 `.app` 与 `.dmg`。
-- Windows：生成 `.msi` 与 NSIS `.exe`。
+- macOS：使用 `macos-latest`，生成 `.app` 与 `.dmg`。
+- Windows：固定使用 `windows-2022` 与 Visual Studio 2022，生成 `.msi` 与 NSIS `.exe`。
+
+Windows Runner 不使用滚动的 `windows-latest` 标签，避免 GitHub 切换默认 Windows / Visual Studio 镜像时未经评估地改变生产构建环境。升级 Runner 必须通过独立 PR 和真实打包验证。
 
 Artifact 名称包含平台和目标提交的前 12 位 SHA：
 
@@ -33,6 +35,18 @@ shendesk-windows-<short-sha>
 ```
 
 Artifact 保留 14 天。找不到预期安装包时，上传步骤会失败，避免出现“Workflow 成功但没有可下载产物”的假成功。
+
+## 构建诊断
+
+`.github/scripts/run-tauri-build.mjs` 以跨平台方式运行 Tauri CLI，同时将标准输出和标准错误实时写入控制台与 `tauri-build.log`。
+
+平台构建失败时，Workflow 会上传：
+
+```text
+shendesk-<platform>-<short-sha>-diagnostics
+```
+
+诊断 Artifact 保留 7 天。成功构建不会上传诊断日志，避免重复保存正常构建输出。
 
 ## 构建判定
 
@@ -46,7 +60,7 @@ Artifact 保留 14 天。找不到预期安装包时，上传步骤会失败，�
 
 合并事件必须提供 `merge_commit_sha`。缺少该字段时，判定步骤会失败关闭，而不是回退到可能错误的 PR Head 或默认分支提交。
 
-判定结果会写入 Job Summary。每个平台的构建结果、提交 SHA、Artifact 名称和上传结果也会写入各自的 Job Summary。
+判定结果会写入 Job Summary。每个平台的构建结果、提交 SHA、Artifact 名称、诊断日志状态和上传结果也会写入各自的 Job Summary。
 
 ## 安全边界
 
@@ -61,13 +75,13 @@ Artifact 保留 14 天。找不到预期安装包时，上传步骤会失败，�
 
 ## 验证
 
-构建判定测试已接入根目录测试命令：
+构建判定与 Workflow 约束测试已接入根目录测试命令：
 
 ```bash
 npm run test
 ```
 
-也可以只运行判定测试：
+也可以只运行自动化构建测试：
 
 ```bash
 node --test .github/scripts/resolve-post-merge-build.test.mjs
@@ -79,7 +93,8 @@ node --test .github/scripts/resolve-post-merge-build.test.mjs
 2. `skip-build` 合并跳过构建；
 3. 关闭但未合并跳过构建；
 4. 手动触发执行构建；
-5. 合并事件缺少 `merge_commit_sha` 时安全失败。
+5. 合并事件缺少 `merge_commit_sha` 时安全失败；
+6. Windows Runner 固定为 `windows-2022`，且失败诊断 Artifact 配置存在。
 
 Workflow 合并后，应通过一次 `workflow_dispatch` 验证真实 macOS、Windows 打包环境；后续 PR 则分别用普通合并和带 `skip-build` 标签的合并验证线上事件路径。
 

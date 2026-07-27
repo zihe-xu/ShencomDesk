@@ -64,7 +64,7 @@ jobs:
               apps/desktop/src-tauri/target/release/bundle/macos/*.app
           - platform: Windows
             artifact_key: windows
-            runner: windows-latest
+            runner: windows-2022
             artifact_paths: |
               apps/desktop/src-tauri/target/release/bundle/msi/*.msi
               apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
@@ -100,7 +100,17 @@ jobs:
       - name: Build Tauri desktop bundles
         id: tauri_build
         working-directory: apps/desktop
-        run: npm run tauri -- build
+        run: node ../../.github/scripts/run-tauri-build.mjs
+
+      - name: Upload failed build diagnostics
+        id: diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}-diagnostics
+          path: apps/desktop/tauri-build.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload desktop bundles
         id: artifact
@@ -120,8 +130,10 @@ jobs:
           PR_NUMBER: ${{ needs.prepare.outputs.pr_number }}
           TRIGGER: ${{ needs.prepare.outputs.trigger }}
           ARTIFACT_NAME: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}
+          DIAGNOSTICS_NAME: shendesk-${{ matrix.artifact_key }}-${{ needs.prepare.outputs.short_sha }}-diagnostics
           BUILD_OUTCOME: ${{ steps.tauri_build.outcome || 'not-run' }}
           ARTIFACT_OUTCOME: ${{ steps.artifact.outcome || 'not-run' }}
+          DIAGNOSTICS_OUTCOME: ${{ steps.diagnostics.outcome || 'not-run' }}
           JOB_STATUS: ${{ job.status }}
         run: |
           {
@@ -136,5 +148,7 @@ jobs:
             echo "| 构建步骤 | ${BUILD_OUTCOME} |"
             echo "| 产物上传 | ${ARTIFACT_OUTCOME} |"
             echo "| Artifact | ${ARTIFACT_NAME} |"
+            echo "| 诊断日志上传 | ${DIAGNOSTICS_OUTCOME} |"
+            echo "| 诊断 Artifact | ${DIAGNOSTICS_NAME} |"
             echo "| Job 状态 | ${JOB_STATUS} |"
           } >> "${GITHUB_STEP_SUMMARY}"
