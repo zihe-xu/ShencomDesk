@@ -19,6 +19,8 @@ const COMMANDS: &[&str] = &[
     "disable_plugin",
     "execute_plugin_command",
     "uninstall_plugin",
+    "check_for_updates",
+    "install_update",
 ];
 
 fn main() {

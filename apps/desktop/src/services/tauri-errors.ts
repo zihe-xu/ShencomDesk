@@ -18,6 +18,12 @@ export const IPC_ERROR_CODES = [
   "plugin_conflict",
   "plugin_execution_failed",
   "plugin_operation_failed",
+  "update_not_configured",
+  "update_busy",
+  "update_not_available",
+  "update_check_failed",
+  "update_install_failed",
+  "update_operation_failed",
   "validation_failed",
   "unknown_error",
 ] as const;

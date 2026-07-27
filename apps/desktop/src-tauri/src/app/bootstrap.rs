@@ -9,6 +9,7 @@ use crate::{
         filesystem::LocalFileRepository,
         logging,
         plugins::{LocalPluginRepository, WasmtimePluginRuntime},
+        updater::TauriUpdateBackend,
     },
 };
 
@@ -16,6 +17,9 @@ use super::{lifecycle, state::AppState};
 
 /// Initializes shared runtime resources before the main window is used.
 pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    app.handle()
+        .plugin(tauri_plugin_updater::Builder::new().build())?;
+
     let app_data_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_data_dir)?;
 
@@ -50,10 +54,12 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         tracing::error!(error = %error, "plugin runtime initialization failed");
         error
     })?);
+    let update_backend = Arc::new(TauriUpdateBackend::new(app.handle().clone()));
     let state = AppState::new(
         Arc::new(LocalFileRepository::default()),
         plugin_repository,
         plugin_runtime,
+        update_backend,
     );
     let plugin_report = state.plugin_service().restore_enabled_plugins();
     tracing::info!(
@@ -63,6 +69,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         "plugin service initialized"
     );
     logging::record_operation("plugin_service.initialize", "success");
+    logging::record_operation("update_service.initialize", "success");
 
     app.manage(database);
     app.manage(state);

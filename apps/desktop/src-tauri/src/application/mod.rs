@@ -6,6 +6,7 @@ pub mod event_bus;
 pub mod file_service;
 pub mod plugin_service;
 pub mod task_service;
+pub mod update_service;
 
 pub mod health_service {
     use crate::domain::health::HealthStatus;

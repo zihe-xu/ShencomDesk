@@ -21,12 +21,12 @@ tauri-plugin-updater
 ```
 
 - React 不直接调用 `@tauri-apps/plugin-updater`，也不获得 Updater 原生命令权限。
-- `UpdateService` 串行化检查和安装；重叠操作立即返回 `update_busy`。
-- `TauriUpdateBackend` 保存待安装的 Tauri `Update`，下载 URL、签名和底层错误不会跨 IPC。
-- 检查到新版本时发布 `update_available` 领域事件。
-- 下载进度通过 Tauri Channel 有序发送；Command 在安装完成后才解析成功。
-- 下载或安装失败时保留已检查更新，允许用户重试；成功后清除。
-- 更新检查与下载安装使用 10 分钟 HTTP 超时，避免大型桌面包在慢速网络下被过早中止。
+- `UpdateService` 串行化检查和安装；重叠操作返回 `update_busy`。
+- `TauriUpdateBackend` 保存待安装的 Tauri `Update` 对象。下载 URL、签名、原始清单和底层错误不会跨 IPC。
+- 检查到新版本时，通过共享 EventBus 发布 `update_available`。
+- 下载进度使用 Tauri Channel 有序发送。
+- 下载、签名验证或安装失败时保留待安装对象，允许用户重试；安装成功后清除。
+- 更新检查和下载使用 10 分钟超时，避免大型桌面包在慢速网络下过早中止。
 
 ## IPC
 
@@ -34,14 +34,27 @@ tauri-plugin-updater
 
 ```ts
 const update = await checkForUpdates();
+
 if (update) {
   console.log(update.version, update.notes);
 }
 ```
 
-返回 `null` 表示当前版本已是最新。返回对象只包含当前版本、目标版本、说明、发布日期和目标平台，不包含下载地址或签名。
+`check_for_updates` 返回 `UpdateInfo | null`：
 
-### 下载并安装
+```ts
+interface UpdateInfo {
+  currentVersion: string;
+  version: string;
+  notes: string | null;
+  publishedAtUnixSeconds: number | null;
+  target: string;
+}
+```
+
+返回 `null` 表示当前版本已经是最新版本。响应不包含下载地址、签名或原始更新清单。
+
+### 下载、验证并安装
 
 ```ts
 await installUpdate({
@@ -60,36 +73,53 @@ await installUpdate({
 started → progress (0..N) → finished
 ```
 
-`finished` 表示签名包下载完成；Command 解析成功表示安装流程也已完成。macOS 在 `restart: true` 时通过 `request_restart` 进入正常退出清理顺序。Windows 安装器可能在安装阶段自动退出应用，因此前端必须把 `finished` 和 Command 断开都视为可能进入安装切换阶段，而不是把断开直接显示成失败。
+`finished` 表示更新包已经下载并完成签名验证，命令成功返回表示安装流程也已完成。Windows 安装器在安装阶段可能自动退出应用；macOS 或安装后仍在运行的平台在 `restart: true` 时通过 `request_restart` 进入 ShenDesk 正常退出清理顺序。
 
-## 签名模型
+## 稳定错误码
 
-Tauri Updater 强制验证更新签名，不能关闭。ShenDesk 使用一对专用更新密钥：
+| Code | 场景 |
+|---|---|
+| `update_not_configured` | 当前构建没有内嵌更新公钥 |
+| `update_busy` | 已有检查或安装操作在运行 |
+| `update_not_available` | 没有经过检查的待安装更新 |
+| `update_check_failed` | 更新检查失败 |
+| `update_install_failed` | 下载、签名验证或安装失败 |
+| `update_operation_failed` | 其他内部更新服务错误 |
 
-- 公钥：作为 GitHub Actions Repository Variable `SHENDESK_UPDATER_PUBLIC_KEY` 保存，并在发布编译时通过 `option_env!` 嵌入应用。
-- 私钥：作为 GitHub Actions Secret `TAURI_SIGNING_PRIVATE_KEY` 保存，只在签名发布 Job 中注入。
-- 私钥密码：可选 Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
+Rust 日志可以记录用于诊断的底层错误，但 IPC 只返回固定消息，不暴露 URL、签名、请求头、清单内容或安装器内部信息。
 
-仓库、日志、Job Summary、Artifact 与 IPC 都不得包含私钥。公钥不是秘密，但变更公钥会使已安装旧版本无法验证新密钥签名的更新，因此密钥轮换必须采用兼容迁移方案，不能直接覆盖。
+## 签名与密钥
 
-首次发布前，在受控机器生成密钥：
+Tauri Updater 强制验证更新签名，ShenDesk 不提供关闭验证或 HTTP 降级的配置。
+
+密钥职责：
+
+- Repository Variable `SHENDESK_UPDATER_PUBLIC_KEY`：发布编译时通过 `option_env!` 内嵌到应用。
+- Repository Secret `TAURI_SIGNING_PRIVATE_KEY`：只注入签名发布 Job。
+- 可选 Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：保护私钥。
+
+仓库、日志、Job Summary、Artifact 和 IPC 都不得包含私钥。公钥不是秘密，但公钥轮换会影响旧版本验证新更新，因此必须通过兼容迁移版本完成，不能直接覆盖。
+
+首次发布前，应在受控机器生成密钥并立即把私钥移入组织密码库或密钥管理系统：
 
 ```bash
 cd apps/desktop
 npm run tauri signer generate -- -w ~/.tauri/shendesk.key
 ```
 
-生成后立即把私钥移入组织密码库或密钥管理系统，并把对应公钥配置到 Repository Variable。不要把任一密钥文件复制到仓库目录。
+不要把生成的密钥文件复制到仓库目录。
 
-## 发布配置
+## 构建配置
 
-普通开发与合并后构建使用 `tauri.conf.json`，不创建 updater artifact，也不需要签名私钥。只有签名发布 Workflow 叠加：
+普通开发、CI 和合并后构建使用 `tauri.conf.json`，不创建 updater artifact，也不需要签名私钥。
+
+签名发布额外叠加：
 
 ```text
-src-tauri/tauri.release.conf.json
+apps/desktop/src-tauri/tauri.release.conf.json
 ```
 
-该配置启用：
+其唯一职责是启用：
 
 ```json
 {
@@ -99,87 +129,54 @@ src-tauri/tauri.release.conf.json
 }
 ```
 
-因此普通 CI 可以在没有密钥的情况下编译；没有内嵌公钥的本地构建调用检查更新时会安全返回 `update_not_configured`，不会回退到未签名更新或 HTTP。
+普通构建没有内嵌公钥时，调用检查更新会安全返回 `update_not_configured`，不会连接未签名或不安全的更新源。
 
-## 发布流程
+## 发布 Workflow
 
-`.github/workflows/release.yml` 只响应 `v*` 标签。预检在任何打包前验证：
+`.github/workflows/release.yml` 只响应 `v*` Tag。预检在任何打包前验证：
 
 1. 根 `package.json`、桌面 `package.json`、Cargo package 与 Tauri config 版本一致且为 SemVer。
-2. 标签严格等于 `v<version>`。
-3. 基础 Tauri config 没有启用 updater artifacts。
+2. Tag 严格等于 `v<version>`。
+3. 基础 Tauri config 未启用 updater artifacts。
 4. release-only config 已启用 updater artifacts。
-5. 公钥变量与私钥 Secret 非空。
+5. 公钥 Variable 与私钥 Secret 非空。
+6. `tauri-action` 固定到经审查的完整提交 SHA。
 
-通过后按平台串行构建（每个平台都会读取并合并现有 `latest.json`，避免并发覆盖）：
+通过后按平台串行构建，避免多个 Job 同时读取、删除和上传 `latest.json`：
 
-- macOS Apple Silicon DMG 与 `.app.tar.gz` 更新包/签名。
-- macOS Intel DMG 与 `.app.tar.gz` 更新包/签名。
-- Windows x64 MSI 与 MSI 更新签名。
-- 多平台 `latest.json`。
+- macOS Apple Silicon：DMG、更新包和 `.sig`。
+- macOS Intel：DMG、更新包和 `.sig`。
+- Windows x64：MSI、更新包和 `.sig`。
+- 聚合后的多平台 `latest.json`。
 
-Tauri Action 创建 Draft Release。维护者必须核对版本、平台资产、`.sig` 和 `latest.json` 后再手动发布；Draft 不会被 `/releases/latest/` 端点返回。
+Workflow 创建 Draft Release。维护者必须核对版本、平台资产、签名和 `latest.json` 后再手动发布；Draft 不会被 `/releases/latest/` 返回。
 
-推荐版本发布顺序：
+## 首次签名发布清单
 
-```text
-更新四处版本
-  → PR + CI
-  → 合并 main
-  → 创建并推送 v<version> 标签
-  → 签名发布 Workflow
-  → 检查 Draft Release
-  → 手动 Publish
-  → 已安装客户端检查并验证更新
+1. 安全生成并备份更新密钥。
+2. 配置 `SHENDESK_UPDATER_PUBLIC_KEY`。
+3. 配置 `TAURI_SIGNING_PRIVATE_KEY` 和可选密码。
+4. 同步更新四处应用版本。
+5. 合并版本变更并确认普通 CI 通过。
+6. 创建严格匹配的 `v<version>` Tag。
+7. 等待三个平台签名构建完成。
+8. 检查 Draft Release 包含全部安装包、更新包、`.sig` 与 `latest.json`。
+9. 在测试机器验证升级后再发布 Release。
+
+## 验证
+
+根目录测试包含发布预检约束：
+
+```bash
+npm run test
 ```
 
-## 错误协议
+Rust CI 另外验证：
 
-| Code | 场景 |
-|---|---|
-| `update_not_configured` | 当前构建没有内嵌更新公钥 |
-| `update_unsupported` | 当前平台不受 Updater 支持 |
-| `update_busy` | 检查或安装操作正在运行 |
-| `update_not_available` | 没有经过检查的待安装更新 |
-| `update_check_failed` | HTTPS、清单、版本或客户端�败时上��
-npm run /tauri.release.装的 Ta��WASM 编译详情或 trap 文本
-- 更新 e���布流rogress��� �� 合�```text
-��
-- m `{ watc版�保证�w 的 库、日志�]������运uri.release.co�证新���ri CLI 在-Tauri config 没有启用 updater artifacts。
-4. release-only��本无�|
-
-## � `taa]�����P、Permissions 与 Capabi�
-e�表示当前版��验证更新
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
 ```
 
-## 错误协��前 | HTT �ate�私钥�b�
-## 错�/Ses��序�安装器可能在安装阶段自动退出应用，因此前端必须把 `finished` 和 Command 断开郦�求目录�s��在V�e | `update_b`s���
-U``
-
-进度事什有�版本�u载戛�启用 度� recurs`update_available` �
-- ���有�版本�u载戛�启用 度��安装器可���fig  构�Variablepps/de回。：
-
-1.`
-
-#�te_chec64 MSI 与 MSI � 库、�被�I 与 M验证。
-
-Artifact ��都�``text�所直�ig  构�Vons 与 Capiort
- � `mac.�:���会跨 IPC〙��p
-n.co�证w 版本��时�ck_::,�流ro��装ses/latest/` 端�不获�不获�不获�不获�不获�不获�不获�不获�不获�不获�不获�不获��回。：
-
-1.`
-
-#�te_chec>ffffff更新，因此密钥轮没� | HTTPS、清�l布 J `latesss") {
-�SI 与 MSI � 廄织寯-s") ss")�4验证。
-
-Artifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 e`。
-- 下载 URL、�rtifact �口 �!n# 错误协议
-
-| estart�� 库、�：eull Requ��名材料�_check_failedddddddddddddddddddk_faoqu��名�构建� UI�)��ck_标� ��
+真实签名产物只能在配置密钥后由版本 Tag Workflow 验收。本功能 PR 不创建版本 Tag，也不生成或提交真实密钥。

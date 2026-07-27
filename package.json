@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @shendesk/desktop",
     "build": "npm run build --workspace @shendesk/desktop",
-    "test": "npm run test --workspace @shendesk/desktop && node --test .github/scripts/resolve-post-merge-build.test.mjs",
+    "test": "npm run test --workspace @shendesk/desktop && node --test .github/scripts/resolve-post-merge-build.test.mjs .github/scripts/validate-release.test.mjs",
     "preview": "npm run preview --workspace @shendesk/desktop",
     "tauri": "npm run tauri --workspace @shendesk/desktop"
   },

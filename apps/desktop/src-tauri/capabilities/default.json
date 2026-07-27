@@ -25,6 +25,8 @@
     "allow-enable-plugin",
     "allow-disable-plugin",
     "allow-execute-plugin-command",
-    "allow-uninstall-plugin"
+    "allow-uninstall-plugin",
+    "allow-check-for-updates",
+    "allow-install-update"
   ]
 }
