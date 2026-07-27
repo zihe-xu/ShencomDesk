@@ -125,6 +125,14 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
   assert.match(workflow, /tauri\.release\.conf\.json/);
   assert.match(workflow, /includeUpdaterJson: true/);
   assert.match(workflow, /max-parallel: 1/);
+  assert.match(
+    workflow,
+    /runner: macos-26\s*\n\s*target: aarch64-apple-darwin/,
+  );
+  assert.match(
+    workflow,
+    /runner: macos-26-intel\s*\n\s*target: x86_64-apple-darwin/,
+  );
   assert.match(workflow, /releaseDraft: true/);
 });
 
