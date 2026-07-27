@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - feat/issue-13-auto-update
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
