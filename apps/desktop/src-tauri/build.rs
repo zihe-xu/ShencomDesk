@@ -24,6 +24,11 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    // Release builds embed this value through option_env!. Explicitly tracking it
+    // prevents a cached unsigned development build from being reused after the
+    // repository public-key variable is configured or rotated.
+    println!("cargo:rerun-if-env-changed=SHENDESK_UPDATER_PUBLIC_KEY");
+
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
