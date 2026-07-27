@@ -1,9 +1,9 @@
 name: Issue 9 source artifact
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/issue-9-event-bus
+      - main
 
 permissions:
   contents: read
