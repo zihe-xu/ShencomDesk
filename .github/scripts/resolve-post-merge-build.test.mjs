@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { resolveBuildDecision } from "./resolve-post-merge-build.mjs";
@@ -100,4 +101,17 @@ test("merged PR without merge_commit_sha fails closed", () => {
   assert.equal(decision.shouldBuild, false);
   assert.equal(decision.fatal, true);
   assert.match(decision.reason, /merge_commit_sha/);
+});
+
+test("workflow pins the Windows runner and retains failed build diagnostics", () => {
+  const workflow = readFileSync(
+    new URL("../workflows/build.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /runner:\s+windows-2022/);
+  assert.doesNotMatch(workflow, /runner:\s+windows-latest/);
+  assert.match(workflow, /run-tauri-build\.mjs/);
+  assert.match(workflow, /Upload failed build diagnostics/);
+  assert.match(workflow, /retention-days:\s+7/);
 });
