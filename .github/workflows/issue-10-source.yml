@@ -1,9 +1,9 @@
 name: Issue 10 source artifact
 
 on:
-  push:
+  pull_request:
     branches:
-      - feat/issue-10-file-service
+      - main
 
 permissions:
   contents: read
