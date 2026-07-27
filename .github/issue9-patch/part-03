@@ -1,0 +1,150 @@
+-            return false;
+-        };
++        let snapshot = {
++            let mut tasks = write_records(&self.tasks);
++            let Some(record) = tasks.get_mut(&self.id) else {
++                return false;
++            };
+ 
+-        if record.snapshot.state != TaskState::Running
+-            || record.cancellation.load(Ordering::Acquire)
+-        {
+-            return false;
++            if record.snapshot.state != TaskState::Running
++                || record.cancellation.load(Ordering::Acquire)
++            {
++                return false;
++            }
++
++            record.snapshot.progress.update(completed);
++            let snapshot = record.snapshot.clone();
++            self.events.publish(AppEvent::TaskProgressed {
++                task: snapshot,
++            });
+         }
+ 
+-        record.snapshot.progress.update(completed);
+         true
+     }
+ }
+@@ -118,6 +132,7 @@ pub struct TaskManager {
+     sender: Mutex<Option<Sender<QueuedTask>>>,
+     tasks: TaskRecords,
+     next_id: AtomicU64,
++    events: EventBus,
+ }
+ 
+ impl fmt::Debug for TaskManager {
+@@ -125,12 +140,25 @@ impl fmt::Debug for TaskManager {
+         formatter
+             .debug_struct("TaskManager")
+             .field("task_count", &read_records(&self.tasks).len())
++            .field("events", &self.events)
+             .finish_non_exhaustive()
+     }
+ }
+ 
+ impl TaskManager {
+     pub fn new(queue_capacity: usize, worker_count: usize) -> Self {
++        Self::with_event_bus(queue_capacity, worker_count, EventBus::default())
++    }
++
++    pub fn with_events(events: EventBus) -> Self {
++        Self::with_event_bus(DEFAULT_QUEUE_CAPACITY, DEFAULT_WORKER_COUNT, events)
++    }
++
++    pub fn with_event_bus(
++        queue_capacity: usize,
++        worker_count: usize,
++        events: EventBus,
++    ) -> Self {
+         assert!(queue_capacity > 0, "task queue capacity must be positive");
+         assert!(worker_count > 0, "task worker count must be positive");
+ 
+@@ -141,8 +169,15 @@ impl TaskManager {
+         for worker_index in 0..worker_count {
+             let worker_receiver = Arc::clone(&receiver);
+             let worker_tasks = Arc::clone(&tasks);
++            let worker_events = events.clone();
+             drop(spawn(async move {
+-                worker_loop(worker_index, worker_receiver, worker_tasks).await;
++                worker_loop(
++                    worker_index,
++                    worker_receiver,
++                    worker_tasks,
++                    worker_events,
++                )
++                .await;
+             }));
+         }
+ 
+@@ -150,6 +185,7 @@ impl TaskManager {
+             sender: Mutex::new(Some(sender)),
+             tasks,
+             next_id: AtomicU64::new(1),
++            events,
+         }
+     }
+ 
+@@ -184,7 +220,11 @@ impl TaskManager {
+             return Err(TaskManagerError::QueueUnavailable);
+         };
+ 
+-        write_records(&self.tasks).insert(
++        // Keep the record lock until TaskCreated is published. A worker can
++        // dequeue immediately, but cannot transition to Running before this
++        // event has been observed by the bus.
++        let mut records = write_records(&self.tasks);
++        records.insert(
+             id.clone(),
+             TaskRecord {
+                 snapshot: snapshot.clone(),
+@@ -192,15 +232,18 @@ impl TaskManager {
+             },
+         );
+ 
+-        let send_result = sender.try_send(queued);
+-        drop(sender_guard);
+-
+-        if send_result.is_err() {
+-            write_records(&self.tasks).remove(&id);
++        if sender.try_send(queued).is_err() {
++            records.remove(&id);
+             return Err(TaskManagerError::QueueUnavailable);
+         }
+ 
+-        Ok(self.get(&id).unwrap_or(snapshot))
++        self.events.publish(AppEvent::TaskCreated {
++            task: snapshot.clone(),
++        });
++        drop(records);
++        drop(sender_guard);
++
++        Ok(snapshot)
+     }
+ 
+     pub fn get(&self, id: &TaskId) -> Option<TaskSnapshot> {
+@@ -219,14 +262,22 @@ impl TaskManager {
+     pub fn cancel(&self, id: &TaskId) -> Option<TaskSnapshot> {
+         let mut tasks = write_records(&self.tasks);
+         let record = tasks.get_mut(id)?;
++        let transitioned = !record.snapshot.state.is_terminal();
+ 
+-        if !record.snapshot.state.is_terminal() {
++        if transitioned {
+             record.cancellation.store(true, Ordering::Release);
+             record.snapshot.state = TaskState::Cancelled;
+             record.snapshot.error = None;
+         }
+ 
+-        Some(record.snapshot.clone())
++        let snapshot = record.snapshot.clone();
++        if transitioned {
++            self.events.publish(AppEvent::TaskFinished {
++                task: snapshot.clone(),
++            });
++        }
++
++        Some(snapshot)
+     }
+ 
