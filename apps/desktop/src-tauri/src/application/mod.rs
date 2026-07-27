@@ -2,6 +2,7 @@
 
 pub mod config_repository;
 pub mod config_service;
+pub mod event_bus;
 pub mod task_service;
 
 pub mod health_service {
