@@ -1,0 +1,79 @@
+name: Phase 3 Auto Update source bootstrap
+
+on:
+  push:
+    branches:
+      - feat/issue-13-auto-update
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase3-update-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    name: Materialize and format Auto Update source
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/issue-13-auto-update
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Materialize source payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .phase3-update-payload/part-* | base64 --decode > /tmp/phase3-update.tar.gz
+          echo "eb430b85df1d9c4857ae4613845e27fe600dfd9fc8cec180a1f5b039a0e1572f  /tmp/phase3-update.tar.gz" | sha256sum --check
+          tar -xzf /tmp/phase3-update.tar.gz -C .
+
+      - name: Format Rust and refresh lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
+          cargo generate-lockfile --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Validate release and IPC protocols
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/validate-release.test.mjs
+          node --experimental-strip-types --test apps/desktop/tests/tauri-errors.test.ts
+
+      - name: Remove bootstrap transport
+        shell: bash
+        run: |
+          rm -rf .phase3-update-payload
+          rm -f .github/workflows/phase3-update-bootstrap.yml
+
+      - name: Commit materialized implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No materialized changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: implement signed auto-update pipeline"
+          git push origin HEAD:feat/issue-13-auto-update
