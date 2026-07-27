@@ -1,0 +1,33 @@
+name: Issue 10 source artifact
+
+on:
+  push:
+    branches:
+      - feat/issue-10-file-service
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    name: Export working tree
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload source tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-10-source
+          path: |
+            apps
+            docs
+            packages
+            package.json
+            package-lock.json
+            README.md
+            .github/workflows/ci.yml
+          include-hidden-files: true
+          if-no-files-found: error
