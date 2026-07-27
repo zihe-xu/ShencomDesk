@@ -122,6 +122,26 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
   assert.match(workflow, /retention-days:\s+7/);
 });
 
+test("platform configs declare generated installer icons", () => {
+  const configRoot = new URL(
+    "../../apps/desktop/src-tauri/",
+    import.meta.url,
+  );
+  const baseConfig = JSON.parse(
+    readFileSync(new URL("tauri.conf.json", configRoot), "utf8"),
+  );
+  const windowsConfig = JSON.parse(
+    readFileSync(new URL("tauri.windows.conf.json", configRoot), "utf8"),
+  );
+  const macosConfig = JSON.parse(
+    readFileSync(new URL("tauri.macos.conf.json", configRoot), "utf8"),
+  );
+
+  assert.equal(baseConfig.bundle.icon, undefined);
+  assert.deepEqual(windowsConfig.bundle.icon, ["icons/icon.ico"]);
+  assert.deepEqual(macosConfig.bundle.icon, ["icons/icon.icns"]);
+});
+
 test("Windows build invokes npm through cmd.exe", () => {
   const command = resolveBuildProcess("win32", {
     ComSpec: "C:\\Windows\\System32\\cmd.exe",
