@@ -1,4 +1,4 @@
-name: Diagnose Issue 9 EventBus patch
+name: Diagnose Issue 9 EventBus formatting
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   diagnose:
-    name: Export assembled patch diagnostics
+    name: Export Rust formatting diagnostics
     runs-on: ubuntu-latest
 
     steps:
@@ -19,19 +19,20 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Assemble and inspect patch
+      - name: Apply patch and inspect formatting
         shell: bash
         run: |
           cat .github/issue9-patch/part-* > /tmp/issue9.patch
-          sha256sum /tmp/issue9.patch > /tmp/sha256.txt
-          git apply --check /tmp/issue9.patch > /tmp/apply.log 2>&1 || true
+          git apply --check /tmp/issue9.patch
+          git apply /tmp/issue9.patch
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml > /tmp/fmt.log 2>&1 || true
+          git diff > /tmp/formatted.diff
 
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: issue-9-patch-diagnostics
+          name: issue-9-format-diagnostics
           path: |
-            /tmp/issue9.patch
-            /tmp/apply.log
-            /tmp/sha256.txt
+            /tmp/fmt.log
+            /tmp/formatted.diff
           if-no-files-found: error
