@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { resolveBuildDecision } from "./resolve-post-merge-build.mjs";
+import {
+  resolveBuildProcess,
+  runTauriBuild,
+} from "./run-tauri-build.mjs";
 
 const mergeSha = "0123456789abcdef0123456789abcdef01234567";
 
@@ -114,4 +120,46 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
   assert.match(workflow, /run-tauri-build\.mjs/);
   assert.match(workflow, /Upload failed build diagnostics/);
   assert.match(workflow, /retention-days:\s+7/);
+});
+
+test("Windows build invokes npm through cmd.exe", () => {
+  const command = resolveBuildProcess("win32", {
+    ComSpec: "C:\\Windows\\System32\\cmd.exe",
+  });
+
+  assert.deepEqual(command, {
+    command: "C:\\Windows\\System32\\cmd.exe",
+    args: ["/d", "/s", "/c", "npm run tauri -- build"],
+  });
+});
+
+test("non-Windows build invokes npm directly", () => {
+  assert.deepEqual(resolveBuildProcess("linux", {}), {
+    command: "npm",
+    args: ["run", "tauri", "--", "build"],
+  });
+});
+
+test("synchronous spawn failures are retained in the diagnostics file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "shendesk-build-wrapper-"));
+  const logPath = join(directory, "tauri-build.log");
+  const sink = { write() {} };
+
+  try {
+    const exitCode = await runTauriBuild({
+      platform: "win32",
+      env: { ComSpec: "cmd.exe" },
+      logPath,
+      stdout: sink,
+      stderr: sink,
+      spawnProcess() {
+        throw new Error("synthetic spawn failure");
+      },
+    });
+
+    assert.equal(exitCode, 1);
+    assert.match(readFileSync(logPath, "utf8"), /synthetic spawn failure/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
