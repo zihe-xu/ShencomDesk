@@ -1,13 +1,42 @@
-name: Issue 9 patch staging
+name: Apply Issue 9 EventBus patch
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  idle:
+  apply:
+    name: Apply and format EventBus implementation
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+
     steps:
-      - run: echo "Issue 9 patch parts are being staged"
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/issue9-patch/part-* > /tmp/issue9.patch
+          git apply --check /tmp/issue9.patch
+          git apply /tmp/issue9.patch
+          cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
+          rm -rf .github/issue9-patch
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: implement EventBus event system (#9)"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
