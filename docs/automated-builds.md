@@ -82,3 +82,5 @@ node --test .github/scripts/resolve-post-merge-build.test.mjs
 5. 合并事件缺少 `merge_commit_sha` 时安全失败。
 
 Workflow 合并后，应通过一次 `workflow_dispatch` 验证真实 macOS、Windows 打包环境；后续 PR 则分别用普通合并和带 `skip-build` 标签的合并验证线上事件路径。
+
+用于验证完整构建路径的 PR 不应添加 `skip-build` 标签，否则只会验证跳过分支。
