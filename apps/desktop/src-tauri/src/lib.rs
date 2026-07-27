@@ -30,6 +30,8 @@ pub fn run() {
             crate::commands::plugin::disable_plugin,
             crate::commands::plugin::execute_plugin_command,
             crate::commands::plugin::uninstall_plugin,
+            crate::commands::update::check_for_updates,
+            crate::commands::update::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building ShenDesk");

@@ -8,6 +8,7 @@ use crate::application::{
     file_service::{FileRepository, FileService},
     plugin_service::{PluginRepository, PluginRuntime, PluginService},
     task_service::TaskManager,
+    update_service::{UpdateBackend, UpdateService},
 };
 
 /// Shared runtime state managed by Tauri.
@@ -18,6 +19,7 @@ pub struct AppState {
     task_manager: TaskManager,
     file_service: FileService,
     plugin_service: PluginService,
+    update_service: UpdateService,
 }
 
 impl AppState {
@@ -25,12 +27,14 @@ impl AppState {
         file_repository: Arc<dyn FileRepository>,
         plugin_repository: Arc<dyn PluginRepository>,
         plugin_runtime: Arc<dyn PluginRuntime>,
+        update_backend: Arc<dyn UpdateBackend>,
     ) -> Self {
         let event_bus = EventBus::default();
         let task_manager = TaskManager::with_events(event_bus.clone());
         let file_service = FileService::new(file_repository, event_bus.clone());
         let plugin_service =
             PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
+        let update_service = UpdateService::new(update_backend, event_bus.clone());
 
         Self {
             started_at: Instant::now(),
@@ -38,6 +42,7 @@ impl AppState {
             task_manager,
             file_service,
             plugin_service,
+            update_service,
         }
     }
 
@@ -60,6 +65,10 @@ impl AppState {
     pub fn plugin_service(&self) -> &PluginService {
         &self.plugin_service
     }
+
+    pub fn update_service(&self) -> &UpdateService {
+        &self.update_service
+    }
 }
 
 #[cfg(test)]
@@ -69,8 +78,13 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use async_trait::async_trait;
+
     use crate::{
-        domain::event::EventKind,
+        application::update_service::{
+            UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind,
+        },
+        domain::{event::EventKind, update::UpdateInfo},
         infrastructure::{
             filesystem::LocalFileRepository,
             plugins::{LocalPluginRepository, WasmtimePluginRuntime},
@@ -78,6 +92,26 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Debug, Default)]
+    struct NoopUpdateBackend;
+
+    #[async_trait]
+    impl UpdateBackend for NoopUpdateBackend {
+        async fn check(&self) -> Result<Option<UpdateInfo>, UpdateServiceError> {
+            Ok(None)
+        }
+
+        async fn install(
+            &self,
+            _on_progress: UpdateProgressHandler,
+        ) -> Result<(), UpdateServiceError> {
+            Err(UpdateServiceError::new(
+                UpdateServiceErrorKind::NoPendingUpdate,
+                "no update",
+            ))
+        }
+    }
 
     #[test]
     fn core_services_share_the_application_event_bus() {
@@ -96,6 +130,7 @@ mod tests {
                     .expect("plugin repository should initialize"),
             ),
             Arc::new(WasmtimePluginRuntime::new().expect("plugin runtime should initialize")),
+            Arc::new(NoopUpdateBackend),
         );
         let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
         let created = state

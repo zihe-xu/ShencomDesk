@@ -1,0 +1,201 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+import {
+  parseCargoPackageVersion,
+  validateReleaseConfiguration,
+} from "./validate-release.mjs";
+
+function validInput(overrides = {}) {
+  return {
+    rootPackage: { version: "1.2.3" },
+    desktopPackage: { version: "1.2.3" },
+    cargoToml:
+      '[package]\nname = "shendesk"\nversion = "1.2.3"\n\n[dependencies]\n',
+    tauriConfig: { version: "1.2.3", bundle: {} },
+    releaseConfig: { bundle: { createUpdaterArtifacts: true } },
+    tagName: "v1.2.3",
+    publicKey: "public-key",
+    privateKeyConfigured: true,
+    ...overrides,
+  };
+}
+
+test("extracts the package version without reading dependency versions", () => {
+  assert.equal(
+    parseCargoPackageVersion(
+      '[package]\nname = "shendesk"\nversion = "2.3.4"\n\n[dependencies]\nserde = "1"\n',
+    ),
+    "2.3.4",
+  );
+});
+
+test("accepts a matching signed release configuration", () => {
+  assert.deepEqual(validateReleaseConfiguration(validInput()), {
+    version: "1.2.3",
+    tagName: "v1.2.3",
+    updaterArtifacts: true,
+    signingMaterialConfigured: true,
+  });
+});
+
+test("rejects version drift before creating a release", () => {
+  assert.throws(
+    () =>
+      validateReleaseConfiguration(
+        validInput({ desktopPackage: { version: "1.2.4" } }),
+      ),
+    /release versions do not match/,
+  );
+});
+
+test("rejects a tag that does not exactly match the application version", () => {
+  assert.throws(
+    () => validateReleaseConfiguration(validInput({ tagName: "v1.2.4" })),
+    /release tag must be exactly v1\.2\.3/,
+  );
+});
+
+test("fails closed when signing material is missing", () => {
+  assert.throws(
+    () => validateReleaseConfiguration(validInput({ publicKey: "" })),
+    /SHENDESK_UPDATER_PUBLIC_KEY is not configured/,
+  );
+  assert.throws(
+    () =>
+      validateReleaseConfiguration(
+        validInput({ privateKeyConfigured: false }),
+      ),
+    /TAURI_SIGNING_PRIVATE_KEY is not configured/,
+  );
+});
+
+test("keeps updater artifact generation release-only", () => {
+  assert.throws(
+    () =>
+      validateReleaseConfiguration(
+        validInput({
+          tauriConfig: {
+            version: "1.2.3",
+            bundle: { createUpdaterArtifacts: true },
+          },
+        }),
+      ),
+    /base Tauri config must not require updater artifacts/,
+  );
+  assert.throws(
+    () =>
+      validateReleaseConfiguration(
+        validInput({ releaseConfig: { bundle: {} } }),
+      ),
+    /release Tauri config must enable/,
+  );
+});
+
+test("release workflow is tag-only and minimizes signing-key exposure", async () => {
+  const workflow = await readFile(
+    new URL("../workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
+  assert.doesNotMatch(workflow, /pull_request:/);
+  assert.match(workflow, /permissions:\s*\n\s*contents: read/);
+  assert.match(
+    workflow,
+    /release:[\s\S]*?permissions:\s*\n\s*contents: write/,
+  );
+  assert.match(
+    workflow,
+    /SHENDESK_UPDATER_PUBLIC_KEY: \$\{\{ vars\.SHENDESK_UPDATER_PUBLIC_KEY \}\}/,
+  );
+  assert.match(
+    workflow,
+    /TAURI_SIGNING_PRIVATE_KEY_CONFIGURED: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY != '' \}\}/,
+  );
+  assert.equal(
+    [...workflow.matchAll(/^\s*TAURI_SIGNING_PRIVATE_KEY:\s/gm)].length,
+    1,
+  );
+  assert.match(
+    workflow,
+    /tauri-apps\/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5/,
+  );
+  assert.match(workflow, /tauri\.release\.conf\.json/);
+  assert.match(workflow, /includeUpdaterJson: true/);
+  assert.match(workflow, /max-parallel: 1/);
+  assert.match(
+    workflow,
+    /runner: macos-26\s*\n\s*target: aarch64-apple-darwin/,
+  );
+  assert.match(
+    workflow,
+    /runner: macos-26-intel\s*\n\s*target: x86_64-apple-darwin/,
+  );
+  assert.match(workflow, /releaseDraft: true/);
+});
+
+test("runtime updater boundary remains signed, HTTPS-only, and least-privilege", async () => {
+  const [capabilityText, baseConfigText, releaseConfigText, updaterSource, buildScript] =
+    await Promise.all([
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/capabilities/default.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/tauri.conf.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/tauri.release.conf.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL(
+          "../../apps/desktop/src-tauri/src/infrastructure/updater/mod.rs",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+      readFile(
+        new URL("../../apps/desktop/src-tauri/build.rs", import.meta.url),
+        "utf8",
+      ),
+    ]);
+
+  const capability = JSON.parse(capabilityText);
+  const baseConfig = JSON.parse(baseConfigText);
+  const releaseConfig = JSON.parse(releaseConfigText);
+
+  assert.ok(capability.permissions.includes("allow-check-for-updates"));
+  assert.ok(capability.permissions.includes("allow-install-update"));
+  assert.equal(
+    capability.permissions.some((permission) => permission.startsWith("updater:")),
+    false,
+  );
+  assert.equal(baseConfig.bundle.createUpdaterArtifacts, undefined);
+  assert.equal(releaseConfig.bundle.createUpdaterArtifacts, true);
+  assert.match(
+    updaterSource,
+    /https:\/\/github\.com\/zihe-xu\/ShencomDesk\/releases\/latest\/download\/latest\.json/,
+  );
+  assert.match(
+    updaterSource,
+    /option_env!\("SHENDESK_UPDATER_PUBLIC_KEY"\)/,
+  );
+  assert.doesNotMatch(updaterSource, /dangerous_(?:insecure|accept)/);
+  assert.match(
+    buildScript,
+    /cargo:rerun-if-env-changed=SHENDESK_UPDATER_PUBLIC_KEY/,
+  );
+});

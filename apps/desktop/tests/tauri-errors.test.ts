@@ -50,6 +50,17 @@ test("preserves stable plugin errors", () => {
   assert.equal(normalized.message, "插件包无效或与当前版本不兼容。");
 });
 
+test("preserves stable update errors", () => {
+  const normalized = normalizeIpcError({
+    code: "update_install_failed",
+    message: "更新下载、验证或安装失败，请重试。",
+  });
+
+  assert.ok(normalized instanceof ShenDeskIpcError);
+  assert.equal(normalized.code, "update_install_failed");
+  assert.equal(normalized.message, "更新下载、验证或安装失败，请重试。");
+});
+
 test("redacts unknown objects and native errors", () => {
   const internalPath = "/Users/example/private/app.sqlite";
   const unknownPayload = normalizeIpcError({

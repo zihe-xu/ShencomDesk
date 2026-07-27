@@ -9,7 +9,7 @@ Application Service ──定义──> Repository / Runtime Port
       ↓                              ↑
 Domain                       Infrastructure Adapter
                                       ↓
-                              SQLx / notify / Wasmtime
+                       SQLx / notify / Wasmtime / Tauri Updater
 ```
 
 ## 目录职责
@@ -18,7 +18,7 @@ Domain                       Infrastructure Adapter
 - `commands`：接收 Tauri IPC 调用，只做输入输出适配。
 - `application`：组织用例、服务流程，定义持久化/运行时端口并提供进程内 EventBus。
 - `domain`：领域类型、规则与事件协议，不依赖 Tauri 或基础设施。
-- `infrastructure`：数据库、缓存、文件、网络、系统和 WASM Runtime 适配器。
+- `infrastructure`：数据库、缓存、文件、网络、系统、WASM Runtime 和 Tauri Updater 适配器。
 - `utils`：错误类型等横切工具。
 
 ## 约束
@@ -60,6 +60,22 @@ PluginService ──────> PluginRepository / PluginRuntime
 ```
 
 因此 Command 不接触 Wasmtime，Domain 不依赖 Wasmtime 类型，应用服务可使用内存仓储和记录型 Runtime 做单元测试。详见 `docs/plugin-system.md`。
+
+## 自动更新依赖倒置
+
+`application::update_service::UpdateBackend` 定义检查和安装端口。`UpdateService` 负责互斥操作、稳定错误和 `update_available` 领域事件；`TauriUpdateBackend` 位于 Infrastructure，持有不会跨 IPC 的 Tauri `Update`：
+
+```text
+Update Command
+      ↓
+UpdateService ──────> UpdateBackend
+                          ↑
+                  TauriUpdateBackend
+                          ↓
+                 tauri-plugin-updater
+```
+
+公钥、endpoint、签名验证、下载与安装细节都停留在 Infrastructure。Command 仅连接 Tauri Channel 和可选重启；Domain 只定义安全的版本元数据、进度事件和安装结果。详见 `docs/auto-update.md`。
 
 ## 模块事件通信
 

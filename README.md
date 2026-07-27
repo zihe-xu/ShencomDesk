@@ -50,7 +50,7 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --a
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 ```
 
-`npm run test` 同时覆盖前端错误映射测试和合并后构建触发判定测试。
+`npm run test` 同时覆盖前端错误映射、合并后构建判定和签名发布预检约束。
 
 ## Phase 3：Plugin System
 
@@ -64,6 +64,19 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 
 Manifest、ABI、生命周期、安全边界和 IPC 详见 [`docs/plugin-system.md`](docs/plugin-system.md)。
 
+## Phase 3：Auto Update
+
+ShenDesk 使用 Tauri Updater 与 GitHub Releases 提供 macOS / Windows 签名更新能力：
+
+- React 只调用 `check_for_updates` 与 `install_update` 两个自定义 IPC，不获得原生 Updater 权限。
+- Rust 使用固定 HTTPS `latest.json` 地址，并强制校验 Tauri 更新签名。
+- 更新 URL、签名和底层网络/安装错误不会返回 WebView。
+- 下载进度通过有序 Tauri Channel 发送。
+- 普通开发构建可以不包含公钥；检查更新会安全返回 `update_not_configured`。
+- `v<version>` Tag 触发 Draft Release，串行生成 macOS ARM64、macOS Intel、Windows x64 安装包、签名和聚合后的 `latest.json`。
+
+签名发布前需要配置 Repository Variable `SHENDESK_UPDATER_PUBLIC_KEY`、Secret `TAURI_SIGNING_PRIVATE_KEY`，以及可选的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。完整运行时、密钥和发布流程见 [`docs/auto-update.md`](docs/auto-update.md)。
+
 ## 合并后自动化构建
 
 Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 macOS 与 Windows Runner 上构建 Tauri 安装包，并将产物保留 14 天。
@@ -73,6 +86,6 @@ Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 m
 - PR 关闭但未合并：不执行构建。
 - 需要补构建时：可在 GitHub Actions 中使用 `workflow_dispatch` 手动触发。
 
-构建产物当前不包含正式代码签名、Release 发布或 Tauri Updater 元数据。详细规则和验证方式见 [`docs/automated-builds.md`](docs/automated-builds.md)。
+合并后 Artifact 用于构建验证，不包含正式更新签名或 Release 元数据；正式发布只由版本 Tag 的 `Signed desktop release` Workflow 生成。构建规则见 [`docs/automated-builds.md`](docs/automated-builds.md)。
 
 > Rust 与 Tauri 的平台依赖请参考 Tauri 官方环境配置文档。

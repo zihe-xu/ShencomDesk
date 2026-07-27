@@ -4,6 +4,7 @@ pub mod database;
 pub mod filesystem;
 pub mod logging;
 pub mod plugins;
+pub mod updater;
 
 pub mod cache {
     #[derive(Debug, Default)]

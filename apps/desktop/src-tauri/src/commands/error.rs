@@ -4,6 +4,7 @@ use crate::{
     application::{
         file_service::{FileServiceError, FileServiceErrorKind},
         plugin_service::{PluginServiceError, PluginServiceErrorKind},
+        update_service::{UpdateServiceError, UpdateServiceErrorKind},
     },
     utils::{AppError, AppErrorKind},
 };
@@ -30,6 +31,12 @@ pub enum IpcErrorCode {
     PluginConflict,
     PluginExecutionFailed,
     PluginOperationFailed,
+    UpdateNotConfigured,
+    UpdateBusy,
+    UpdateNotAvailable,
+    UpdateCheckFailed,
+    UpdateInstallFailed,
+    UpdateOperationFailed,
     ValidationFailed,
     UnknownError,
 }
@@ -129,6 +136,38 @@ impl IpcError {
         Self::new(
             IpcErrorCode::PluginOperationFailed,
             "插件操作失败，请重试。",
+        )
+    }
+
+    pub fn for_update_operation(error: &UpdateServiceError) -> Self {
+        match error.kind() {
+            UpdateServiceErrorKind::NotConfigured => Self::new(
+                IpcErrorCode::UpdateNotConfigured,
+                "当前构建未配置安全更新通道。",
+            ),
+            UpdateServiceErrorKind::Busy => {
+                Self::new(IpcErrorCode::UpdateBusy, "另一个更新操作正在进行中。")
+            }
+            UpdateServiceErrorKind::NoPendingUpdate => Self::new(
+                IpcErrorCode::UpdateNotAvailable,
+                "没有可安装的更新，请先检查新版本。",
+            ),
+            UpdateServiceErrorKind::CheckFailed => Self::new(
+                IpcErrorCode::UpdateCheckFailed,
+                "检查更新失败，请稍后重试。",
+            ),
+            UpdateServiceErrorKind::InstallFailed => Self::new(
+                IpcErrorCode::UpdateInstallFailed,
+                "更新下载、验证或安装失败，请重试。",
+            ),
+            UpdateServiceErrorKind::Internal => Self::update_operation_failed(),
+        }
+    }
+
+    pub fn update_operation_failed() -> Self {
+        Self::new(
+            IpcErrorCode::UpdateOperationFailed,
+            "更新服务暂时不可用，请重试。",
         )
     }
 
@@ -246,5 +285,19 @@ mod tests {
         assert!(!serialized.contains("/Users/example"));
         assert!(!serialized.contains("offset"));
         assert_eq!(payload.message, "插件包无效或与当前版本不兼容。");
+    }
+
+    #[test]
+    fn maps_update_errors_without_exposing_endpoints_or_signatures() {
+        let internal = UpdateServiceError::check_failed(
+            "GET https://private.example/latest.json rejected signature SECRET",
+        );
+        let payload = IpcError::for_update_operation(&internal);
+        let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+        assert_eq!(payload.code, IpcErrorCode::UpdateCheckFailed);
+        assert!(!serialized.contains("private.example"));
+        assert!(!serialized.contains("SECRET"));
+        assert_eq!(payload.message, "检查更新失败，请稍后重试。");
     }
 }

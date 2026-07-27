@@ -7,6 +7,7 @@ pub mod event;
 pub mod file;
 pub mod plugin;
 pub mod task;
+pub mod update;
 
 pub mod user {
     use super::*;

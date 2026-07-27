@@ -26,7 +26,12 @@ ShenDesk 使用 Tauri 2 的 CSP、Permissions 与 Capabilities 建立 WebView �
 - `execute_plugin_command`
 - `uninstall_plugin`
 
-Tauri 为这些命令生成对应的 allow/deny 权限。`capabilities/default.json` 只把 `allow-*` 权限授予标签为 `main` 的窗口；新增窗口默认不具备插件安装或执行权限。
+自动更新只暴露 ShenDesk 自有的两个入口：
+
+- `check_for_updates`
+- `install_update`
+
+WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令生成对应的 allow/deny 权限。`capabilities/default.json` 只把 `allow-*` 权限授予标签为 `main` 的窗口；新增窗口默认不具备插件安装或执行权限。
 
 新增 IPC 命令时，必须同时更新：
 
@@ -58,3 +63,16 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - WebView 只接收固定插件错误码，Manifest 路径、编译细节和 trap 文本仅写入本地日志。
 
 沙箱不替代供应链信任。未来插件市场还必须增加发布者签名、内容哈希、权限声明、撤销与企业策略；详见 `docs/plugin-system.md`。
+## 自动更新供应链边界
+
+- Tauri Updater 的签名验证不可关闭；ShenDesk 不提供未签名或 HTTP 降级。
+- endpoint 固定为 GitHub Latest Release 的 HTTPS `latest.json`。
+- 私钥只存在于 GitHub Actions Secret 和发布构建进程，不进入仓库、Artifact、日志或 WebView。
+- 公钥只在标签发布编译时嵌入；普通构建缺少公钥时返回 `update_not_configured`。
+- 下载 URL、签名和底层解析/安装错误不会通过 IPC 返回。
+- `Signed desktop release` 不在 Pull Request 上运行，避免不受信任代码读取发布 Secret。
+- release-only Tauri config 才启用 updater artifacts，普通 CI 不接触签名材料。
+- Release 默认 Draft，核验多平台资产与 `latest.json` 后才发布。
+
+更新签名只证明更新包由对应私钥签发，不代替 Apple notarization 或 Windows Authenticode。密钥生成、发布步骤和轮换注意事项见 `docs/auto-update.md`。
+

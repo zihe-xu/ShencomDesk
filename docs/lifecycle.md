@@ -10,9 +10,10 @@ ShenDesk 使用 Tauri `App::run` 的事件回调统一处理运行时生命周�
 4. 加载、迁移或恢复应用配置。
 5. 初始化受管插件目录和 Wasmtime Runtime。
 6. 恢复上次持久化为 enabled 的插件；校验或 enable hook 失败的插件自动隔离为 disabled。
-7. 注册包含 EventBus、TaskManager、FileService 和 PluginService 的 Tauri 管理状态。
-8. 发布 `application_ready`。
-9. 记录 `application.ready` 操作日志。
+7. 初始化 UpdateService；发布构建读取编译时公钥，普通构建保持安全未配置状态。
+8. 注册 EventBus、TaskManager、FileService、PluginService 和 UpdateService 的 Tauri 管理状态。
+9. 发布 `application_ready`。
+10. 记录 `application.ready` 操作日志。
 
 ## 退出顺序
 
@@ -29,6 +30,8 @@ ShenDesk 使用 Tauri `App::run` 的事件回调统一处理运行时生命周�
 9. 丢弃 tracing `WorkerGuard`，刷新三个非阻塞日志 Writer。
 
 `RunEvent::ExitRequested` 表示应用即将退出，但未来可能被确认对话框、后台任务或未保存数据阻止。因此该事件暂不执行不可逆的资源释放。
+
+更新安装在 macOS 请求重启时调用 `AppHandle::request_restart`，仍会进入同一 `RunEvent::Exit` 清理顺序，而不是绕过数据库 checkpoint、插件 stop 和日志刷新。Windows 安装器可能由系统安装流程直接终止应用，因此更新 Command 在下载完成时先发送 `finished` Channel 事件，并将平台行为记录在更新文档。
 
 插件 hook 先于共享文件和任务服务停止执行，为未来显式授权的宿主能力保留正确顺序；ABI v1 当前不开放任何宿主 import。单个插件关闭失败只记录诊断，不阻止其他插件和核心资源释放。
 
