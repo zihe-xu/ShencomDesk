@@ -55,6 +55,10 @@ jobs:
             fi
           done
 
+          mkdir -p .github/recovered
+          cp .github/workflows/release.yml .github/recovered/release.yml.txt
+          rm -f .github/workflows/release.yml
+
       - name: Remove consumed payload
         if: steps.payload.outputs.present == 'true'
         shell: bash
