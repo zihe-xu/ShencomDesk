@@ -208,7 +208,8 @@ impl FileRepository for LocalFileRepository {
         let callback_id = id.clone();
         let callback_root = root.clone();
         let cache = self.text_cache.clone();
-        let mut watcher = notify::recommended_watcher(move |result| match result {
+        let mut watcher = notify::recommended_watcher(
+            move |result: notify::Result<notify::Event>| match result {
             Ok(event) => {
                 if event.paths.is_empty() {
                     return;
