@@ -1,0 +1,150 @@
++    pub sequence: u64,
++    pub published_at_unix_ms: u64,
++    pub event: AppEvent,
++}
++
++impl EventEnvelope {
++    pub fn new(sequence: u64, published_at_unix_ms: u64, event: AppEvent) -> Self {
++        Self {
++            sequence,
++            published_at_unix_ms,
++            event,
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::domain::task::{TaskId, TaskSnapshot};
++
++    #[test]
++    fn event_kind_matches_each_wire_event() {
++        let task = TaskSnapshot::pending(TaskId::new("task-1"), "index".to_owned(), 10);
++
++        assert_eq!(AppEvent::ApplicationReady.kind(), EventKind::ApplicationReady);
++        assert_eq!(
++            AppEvent::TaskCreated { task: task.clone() }.kind(),
++            EventKind::TaskCreated
++        );
++        assert_eq!(
++            AppEvent::TaskFinished { task }.kind(),
++            EventKind::TaskFinished
++        );
++    }
++
++    #[test]
++    fn envelope_has_stable_tagged_serialization() {
++        let envelope = EventEnvelope::new(
++            7,
++            123,
++            AppEvent::UpdateAvailable {
++                version: "2.0.0".to_owned(),
++            },
++        );
++        let value = serde_json::to_value(envelope).expect("event should serialize");
++
++        assert_eq!(value["sequence"], 7);
++        assert_eq!(value["publishedAtUnixMs"], 123);
++        assert_eq!(value["event"]["type"], "update_available");
++        assert_eq!(value["event"]["payload"]["version"], "2.0.0");
++    }
++}
+diff --git a/apps/desktop/src-tauri/src/domain/mod.rs b/apps/desktop/src-tauri/src/domain/mod.rs
+index a30ce28..da761ef 100644
+--- a/apps/desktop/src-tauri/src/domain/mod.rs
++++ b/apps/desktop/src-tauri/src/domain/mod.rs
+@@ -3,6 +3,7 @@
+ use serde::{Deserialize, Serialize};
+ 
+ pub mod config;
++pub mod event;
+ pub mod task;
+ 
+ pub mod user {
+diff --git a/docs/event-bus.md b/docs/event-bus.md
+new file mode 100644
+index 0000000..6573dad
+--- /dev/null
++++ b/docs/event-bus.md
+@@ -0,0 +1,154 @@
++# EventBus 事件系统
++
++ShenDesk 使用进程内 EventBus 解耦 Rust Core 模块。事件模型位于 Domain 层，发布与订阅由 Application 层封装，底层使用 `tokio::sync::broadcast`。
++
++## 结构
++
++```text
++Publisher module
++      ↓ publish(AppEvent)
++Application EventBus
++      ↓ tokio broadcast
++ ┌──────────────┬──────────────┬──────────────┐
++Subscriber A    Subscriber B    Subscriber C
++Task observer   File indexer    Diagnostics
++```
++
++相关代码：
++
++- `domain/event.rs`：`AppEvent`、`EventKind`、`EventEnvelope`
++- `application/event_bus.rs`：`EventBus`、`EventSubscriber`、接收错误
++- `app/state.rs`：应用级共享 EventBus
++
++Domain 事件不依赖 Tauri、Tokio 或具体基础设施，因此发布方和订阅方只共享稳定的业务数据协议。
++
++## 事件定义
++
++当前事件类别：
++
++- `application_ready`
++- `application_exiting`
++- `task_created`
++- `task_started`
++- `task_progressed`
++- `task_finished`
++- `file_changed`
++- `user_logged_in`
++- `update_available`
++
++每次发布都会生成一个 envelope：
++
++```json
++{
++  "sequence": 42,
++  "publishedAtUnixMs": 1785110400000,
++  "event": {
++    "type": "update_available",
++    "payload": {
++      "version": "2.0.0"
++    }
++  }
++}
++```
++
++`sequence` 在同一个应用进程内单调递增。EventBus 会串行化序号分配与 channel send，确保并发发布时所有订阅者观察到一致的事件顺序。
++
++## 发布
++
++```rust
++use crate::domain::event::AppEvent;
++
++state.event_bus().publish(AppEvent::FileChanged {
++    path: path.to_string_lossy().into_owned(),
++});
++```
++
++没有活跃订阅者是合法状态。发布不会因为接收者数量为零而失败，也不会等待订阅者完成处理。
++
++## 订阅
++
++订阅全部事件：
++
++```rust
++let mut subscriber = state.event_bus().subscribe();
++
++while let Ok(envelope) = subscriber.recv().await {
++    handle(envelope.event);
++}
++```
++
++按类别订阅：
