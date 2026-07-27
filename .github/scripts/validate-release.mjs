@@ -29,7 +29,6 @@ export function parseCargoPackageVersion(cargoToml) {
   throw new Error("Cargo.toml [package] is missing a version");
 }
 
-
 export function validateReleaseConfiguration({
   rootPackage,
   desktopPackage,
@@ -38,7 +37,7 @@ export function validateReleaseConfiguration({
   releaseConfig,
   tagName,
   publicKey,
-  privateKey,
+  privateKeyConfigured,
 }) {
   const versions = {
     rootPackage: rootPackage?.version,
@@ -82,7 +81,7 @@ export function validateReleaseConfiguration({
   if (typeof publicKey !== "string" || publicKey.trim().length === 0) {
     throw new Error("SHENDESK_UPDATER_PUBLIC_KEY is not configured");
   }
-  if (typeof privateKey !== "string" || privateKey.trim().length === 0) {
+  if (privateKeyConfigured !== true) {
     throw new Error("TAURI_SIGNING_PRIVATE_KEY is not configured");
   }
 
@@ -132,7 +131,8 @@ async function runCli() {
     releaseConfig,
     tagName: process.env.GITHUB_REF_NAME ?? "",
     publicKey: process.env.SHENDESK_UPDATER_PUBLIC_KEY ?? "",
-    privateKey: process.env.TAURI_SIGNING_PRIVATE_KEY ?? "",
+    privateKeyConfigured:
+      process.env.TAURI_SIGNING_PRIVATE_KEY_CONFIGURED === "true",
   });
 
   if (process.env.GITHUB_OUTPUT) {
@@ -152,6 +152,7 @@ async function runCli() {
         `- Tag: \`${result.tagName}\``,
         "- Updater artifacts: enabled by release-only config",
         "- Updater signing material: configured",
+        "- Signing private key content: not exposed to preflight",
         "",
       ].join("\n"),
       "utf8",
