@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod auth;
 pub mod config;
 pub mod event;
 pub mod file;

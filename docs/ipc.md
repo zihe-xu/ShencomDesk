@@ -6,6 +6,7 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 
 | Command | 输入 | 输出 |
 |---|---|---|
+| `login` | `{ request: { username, password } }` | `LoginResponse` |
 | `health_check` | 无 | `HealthStatus` |
 | `get_config` | 无 | `AppConfig` |
 | `save_config` | `{ config: AppConfig }` | 归一化后的 `AppConfig` |
@@ -41,6 +42,8 @@ React Service
 
 Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O、WASM 运行时逻辑或更新网络请求。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client、读取更新地址或处理签名。
 
+认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码和 HTTP 状态语义，Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 适配器负责。
+
 ## 稳定错误协议
 
 可失败命令返回经过脱敏的结构：
@@ -56,6 +59,8 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 
 | Code | 场景 |
 |---|---|
+| `auth_failed` | 认证服务拒绝手机号或密码，消息来自服务端 `errmsg` |
+| `auth_unavailable` | 认证服务不可达、超时或返回无法解析的数据 |
 | `database_unavailable` | SQLite 或本地数据服务不可用 |
 | `config_load_failed` | 配置读取或恢复失败 |
 | `config_save_failed` | 配置保存失败 |
@@ -86,8 +91,9 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 
 ## 信息脱敏
 
-Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和更新后端诊断写入本地日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与固定消息，不包含：
+Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和更新后端诊断写入本地日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与面向用户的消息；其中 `auth_failed` 使用认证服务的 `errmsg`，认证服务不可达或响应无法解析时则使用固定脱敏消息。错误载荷不包含：
 
+- 手机号、密码、Access Token 或 Refresh Token；
 - 本地文件路径；
 - SQL 或数据库内部文本；
 - Rust 类型和堆栈细节；
@@ -106,6 +112,15 @@ Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和�
 ```
 
 ## 前端使用
+
+认证：
+
+```ts
+const response = await login({
+  username: phone,
+  password,
+});
+```
 
 插件：
 
@@ -130,11 +145,11 @@ if (update) {
 }
 ```
 
-所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。配置、任务、文件、插件和更新的类型安全封装分别位于 `src/services/config.ts`、`src/services/tasks.ts`、`src/services/files.ts`、`src/services/plugins.ts` 和 `src/services/updates.ts`。纯错误映射位于 `src/services/tauri-errors.ts`。
+所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。认证、配置、任务、文件、插件和更新的类型安全封装分别位于 `src/services/auth.ts`、`src/services/config.ts`、`src/services/tasks.ts`、`src/services/files.ts`、`src/services/plugins.ts` 和 `src/services/updates.ts`。纯错误映射位于 `src/services/tauri-errors.ts`。
 
 ## 测试
 
 CI 同时执行：
 
-- Rust：验证错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
-- TypeScript：验证已知配置/任务/文件/插件/更新错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。
+- Rust：验证认证成功码与错误映射、错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
+- TypeScript：验证已知认证/配置/任务/文件/插件/更新错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。

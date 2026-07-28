@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::{
     application::{
+        auth_service::{AuthServiceError, AuthServiceErrorKind},
         file_service::{FileServiceError, FileServiceErrorKind},
         plugin_service::{PluginServiceError, PluginServiceErrorKind},
         update_service::{UpdateServiceError, UpdateServiceErrorKind},
@@ -52,6 +53,14 @@ pub struct IpcError {
 }
 
 impl IpcError {
+    pub fn for_auth_operation(error: &AuthServiceError) -> Self {
+        match error.kind() {
+            AuthServiceErrorKind::Validation => Self::validation(),
+            AuthServiceErrorKind::Rejected => Self::auth_failed(error.to_string()),
+            AuthServiceErrorKind::Unavailable => Self::auth_unavailable(),
+        }
+    }
+
     pub fn auth_failed(message: impl Into<String>) -> Self {
         Self::new(IpcErrorCode::AuthFailed, message)
     }
@@ -312,5 +321,19 @@ mod tests {
         assert!(!serialized.contains("private.example"));
         assert!(!serialized.contains("SECRET"));
         assert_eq!(payload.message, "检查更新失败，请稍后重试。");
+    }
+
+    #[test]
+    fn maps_auth_transport_errors_without_exposing_upstream_details() {
+        let internal = AuthServiceError::unavailable(
+            "POST https://private.example/login returned database password SECRET",
+        );
+        let payload = IpcError::for_auth_operation(&internal);
+        let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+        assert_eq!(payload.code, IpcErrorCode::AuthUnavailable);
+        assert!(!serialized.contains("private.example"));
+        assert!(!serialized.contains("SECRET"));
+        assert_eq!(payload.message, "登录服务暂时不可用，请稍后重试。");
     }
 }

@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::application::{
+    auth_service::{AuthBackend, AuthService},
     event_bus::EventBus,
     file_service::{FileRepository, FileService},
     plugin_service::{PluginRepository, PluginRuntime, PluginService},
@@ -17,6 +18,7 @@ pub struct AppState {
     started_at: Instant,
     event_bus: EventBus,
     task_manager: TaskManager,
+    auth_service: AuthService,
     file_service: FileService,
     plugin_service: PluginService,
     update_service: UpdateService,
@@ -28,9 +30,11 @@ impl AppState {
         plugin_repository: Arc<dyn PluginRepository>,
         plugin_runtime: Arc<dyn PluginRuntime>,
         update_backend: Arc<dyn UpdateBackend>,
+        auth_backend: Arc<dyn AuthBackend>,
     ) -> Self {
         let event_bus = EventBus::default();
         let task_manager = TaskManager::with_events(event_bus.clone());
+        let auth_service = AuthService::new(auth_backend);
         let file_service = FileService::new(file_repository, event_bus.clone());
         let plugin_service =
             PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
@@ -40,6 +44,7 @@ impl AppState {
             started_at: Instant::now(),
             event_bus,
             task_manager,
+            auth_service,
             file_service,
             plugin_service,
             update_service,
@@ -56,6 +61,10 @@ impl AppState {
 
     pub fn task_manager(&self) -> &TaskManager {
         &self.task_manager
+    }
+
+    pub fn auth_service(&self) -> &AuthService {
+        &self.auth_service
     }
 
     pub fn file_service(&self) -> &FileService {
@@ -81,10 +90,13 @@ mod tests {
     use async_trait::async_trait;
 
     use crate::{
-        application::update_service::{
-            UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind,
+        application::{
+            auth_service::{AuthBackendResponse, AuthServiceError},
+            update_service::{
+                UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind,
+            },
         },
-        domain::{event::EventKind, update::UpdateInfo},
+        domain::{auth::LoginRequest, event::EventKind, update::UpdateInfo},
         infrastructure::{
             filesystem::LocalFileRepository,
             plugins::{LocalPluginRepository, WasmtimePluginRuntime},
@@ -95,6 +107,19 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct NoopUpdateBackend;
+
+    #[derive(Debug, Default)]
+    struct NoopAuthBackend;
+
+    #[async_trait]
+    impl AuthBackend for NoopAuthBackend {
+        async fn login(
+            &self,
+            _request: &LoginRequest,
+        ) -> Result<AuthBackendResponse, AuthServiceError> {
+            Err(AuthServiceError::unavailable("not configured for state test"))
+        }
+    }
 
     #[async_trait]
     impl UpdateBackend for NoopUpdateBackend {
@@ -131,6 +156,7 @@ mod tests {
             ),
             Arc::new(WasmtimePluginRuntime::new().expect("plugin runtime should initialize")),
             Arc::new(NoopUpdateBackend),
+            Arc::new(NoopAuthBackend),
         );
         let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
         let created = state
