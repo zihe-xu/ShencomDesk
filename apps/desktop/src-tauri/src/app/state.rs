@@ -92,9 +92,7 @@ mod tests {
     use crate::{
         application::{
             auth_service::{AuthBackendResponse, AuthServiceError},
-            update_service::{
-                UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind,
-            },
+            update_service::{UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind},
         },
         domain::{auth::LoginRequest, event::EventKind, update::UpdateInfo},
         infrastructure::{
@@ -117,7 +115,9 @@ mod tests {
             &self,
             _request: &LoginRequest,
         ) -> Result<AuthBackendResponse, AuthServiceError> {
-            Err(AuthServiceError::unavailable("not configured for state test"))
+            Err(AuthServiceError::unavailable(
+                "not configured for state test",
+            ))
         }
     }
 

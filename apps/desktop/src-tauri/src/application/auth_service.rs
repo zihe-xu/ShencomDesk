@@ -53,10 +53,7 @@ pub struct AuthBackendResponse {
 
 #[async_trait]
 pub trait AuthBackend: Send + Sync {
-    async fn login(
-        &self,
-        request: &LoginRequest,
-    ) -> Result<AuthBackendResponse, AuthServiceError>;
+    async fn login(&self, request: &LoginRequest) -> Result<AuthBackendResponse, AuthServiceError>;
 }
 
 #[derive(Clone)]
@@ -151,26 +148,25 @@ mod tests {
         errmsg: &str,
         has_data: bool,
     ) -> AuthBackendResponse {
-        let data = has_data
-            .then(|| {
-                serde_json::from_value(serde_json::json!({
+        let data = has_data.then(|| {
+            serde_json::from_value(serde_json::json!({
+                "additionalInformation": {
                     "additionalInformation": {
-                        "additionalInformation": {
-                            "realname": "测试用户",
-                            "phone": "13800000000",
-                            "username": "13800000000",
-                            "uid": "user-id"
-                        },
-                        "expiration": 1_800_000_000,
-                        "expiresIn": 3_600,
-                        "refreshToken": { "value": "refresh-token" },
-                        "scope": ["all"],
-                        "tokenType": "bearer",
-                        "value": "access-token"
-                    }
-                }))
-                .expect("login data should deserialize")
-            });
+                        "realname": "测试用户",
+                        "phone": "13800000000",
+                        "username": "13800000000",
+                        "uid": "user-id"
+                    },
+                    "expiration": 1_800_000_000,
+                    "expiresIn": 3_600,
+                    "refreshToken": { "value": "refresh-token" },
+                    "scope": ["all"],
+                    "tokenType": "bearer",
+                    "value": "access-token"
+                }
+            }))
+            .expect("login data should deserialize")
+        });
 
         AuthBackendResponse {
             http_status,

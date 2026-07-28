@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::{
-    header::{ACCEPT, CONTENT_TYPE},
-    Client, Request,
-};
+use reqwest::{header::ACCEPT, Client, Request};
 
 use crate::{
     application::auth_service::{AuthBackend, AuthBackendResponse, AuthServiceError},
@@ -43,10 +40,7 @@ impl ShencomAuthBackend {
 
 #[async_trait]
 impl AuthBackend for ShencomAuthBackend {
-    async fn login(
-        &self,
-        request: &LoginRequest,
-    ) -> Result<AuthBackendResponse, AuthServiceError> {
+    async fn login(&self, request: &LoginRequest) -> Result<AuthBackendResponse, AuthServiceError> {
         let response = self
             .client
             .execute(self.build_login_request(request)?)
@@ -68,7 +62,7 @@ impl AuthBackend for ShencomAuthBackend {
 
 #[cfg(test)]
 mod tests {
-    use reqwest::Method;
+    use reqwest::{header::CONTENT_TYPE, Method};
     use serde_json::Value;
 
     use super::*;
