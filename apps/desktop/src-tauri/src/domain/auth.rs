@@ -43,6 +43,32 @@ pub struct UserInformation {
     pub uid: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthState {
+    pub authenticated: bool,
+    pub user: Option<UserInformation>,
+    pub expires_at: Option<i64>,
+}
+
+impl AuthState {
+    pub const fn signed_out() -> Self {
+        Self {
+            authenticated: false,
+            user: None,
+            expires_at: None,
+        }
+    }
+
+    pub fn from_token(token: &AccessToken) -> Self {
+        Self {
+            authenticated: true,
+            user: Some(token.additional_information.clone()),
+            expires_at: Some(token.expiration),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +120,25 @@ mod tests {
 
         assert!(payload.data.is_none());
         assert_eq!(payload.errcode, "601002");
+    }
+
+    #[test]
+    fn auth_state_does_not_expose_tokens() {
+        let state = AuthState {
+            authenticated: true,
+            user: Some(UserInformation {
+                realname: "测试用户".to_owned(),
+                phone: "13800000000".to_owned(),
+                username: "13800000000".to_owned(),
+                uid: "user-id".to_owned(),
+            }),
+            expires_at: Some(1_800_000_000),
+        };
+        let value = serde_json::to_value(state).expect("auth state should serialize");
+
+        assert_eq!(value["authenticated"], true);
+        assert_eq!(value["user"]["uid"], "user-id");
+        assert!(value.get("accessToken").is_none());
+        assert!(value.get("refreshToken").is_none());
     }
 }

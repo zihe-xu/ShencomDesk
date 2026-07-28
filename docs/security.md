@@ -42,13 +42,16 @@ WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令�
 
 ## 认证边界
 
-- WebView 只通过 `login` IPC 提交手机号和密码，不直接访问 Shencom 认证接口。
+- WebView 只通过 `login` IPC 提交手机号和密码，不直接访问 Shencom 认证接口；通过 `get_auth_state` 恢复脱敏状态，通过 `logout` 清除本地会话。
 - 当前版本固定接入测试环境 `https://tst-crm.shencom.cn`；生产环境切换策略尚未纳入本次实现。
 - Rust 代理固定添加测试环境 `scid`，请求整体超时为 15 秒。
 - 服务端仅以 `errcode = "0000"` 表示成功；其他错误通过稳定的 `auth_failed` IPC 错误返回服务端用户提示。
 - 网络失败、超时、非 200 状态、非 JSON 响应或缺少成功数据统一映射为脱敏的 `auth_unavailable`。
-- 原始密码和 Token 不写入日志；本次不持久化 Access Token 或 Refresh Token，也不实现刷新、撤销与登出。
-- `allow-login` 仅授予标签为 `main` 的窗口。
+- Access Token、Refresh Token 和原始密码不写入日志，也不返回 WebView。IPC `AuthState` 只包含登录状态、用户资料和过期时间。
+- 完整 Token 会话以带版本号的 JSON 写入操作系统凭据库：macOS 使用 Keychain，Windows 使用 Credential Manager。服务名固定为 `com.shencom.shendesk.auth`；当前测试环境账户名为 `test-session-v1`，避免与其他环境或不兼容的存储格式共用条目。
+- 应用启动时从系统凭据库恢复未过期会话；过期、损坏或版本不兼容的会话会被删除。凭据库不可用或恢复失败时应用仍以未登录状态启动。`logout` 仅执行本地会话清除，因为服务端撤销/登出接口尚未确认。
+- Refresh Token 会安全保存，但服务端刷新 URL、请求体和错误语义尚未确认，因此当前不会发起猜测性的自动刷新请求。
+- `allow-login`、`allow-get-auth-state` 和 `allow-logout` 仅授予标签为 `main` 的窗口。
 
 ## Capability 启用策略
 
