@@ -12,6 +12,8 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IpcErrorCode {
+    AuthFailed,
+    AuthUnavailable,
     DatabaseUnavailable,
     ConfigLoadFailed,
     ConfigSaveFailed,
@@ -50,6 +52,17 @@ pub struct IpcError {
 }
 
 impl IpcError {
+    pub fn auth_failed(message: impl Into<String>) -> Self {
+        Self::new(IpcErrorCode::AuthFailed, message)
+    }
+
+    pub fn auth_unavailable() -> Self {
+        Self::new(
+            IpcErrorCode::AuthUnavailable,
+            "登录服务暂时不可用，请稍后重试。",
+        )
+    }
+
     pub fn for_config_load(error: &AppError) -> Self {
         Self::from_app_error(error, IpcErrorCode::ConfigLoadFailed)
     }

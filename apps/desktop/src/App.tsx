@@ -1,154 +1,94 @@
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  getConfig,
-  resetConfig,
-  saveConfig,
-  type AppConfig,
-} from "@/services/config";
-import { getHealthStatus, type HealthStatus } from "@/services/health";
+import { login } from "@/services/auth";
 import { ShenDeskIpcError } from "@/services/tauri";
 
-type RequestState = "idle" | "loading" | "ready" | "error";
-
 function App() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [requestState, setRequestState] = useState<RequestState>("idle");
-  const [message, setMessage] = useState("等待连接 Rust Core");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [welcome, setWelcome] = useState("");
 
-  const loadDesktopState = useCallback(async () => {
-    setRequestState("loading");
-    setMessage("正在通过 Tauri IPC 读取状态…");
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setWelcome("");
 
-    try {
-      const [nextHealth, nextConfig] = await Promise.all([
-        getHealthStatus(),
-        getConfig(),
-      ]);
-      setHealth(nextHealth);
-      setConfig(nextConfig);
-      setRequestState("ready");
-      setMessage("React 与 Rust Core 通信正常");
-    } catch (error: unknown) {
-      setRequestState("error");
-      setMessage(formatIpcError(error));
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadDesktopState();
-  }, [loadDesktopState]);
-
-  const toggleTheme = async () => {
-    if (!config) {
+    if (!phone.trim() || !password) {
+      setError("请输入手机号和密码。");
       return;
     }
 
-    setRequestState("loading");
+    setIsSubmitting(true);
     try {
-      const saved = await saveConfig({
-        ...config,
-        theme: config.theme === "dark" ? "light" : "dark",
-      });
-      setConfig(saved);
-      setRequestState("ready");
-      setMessage(`配置已保存：theme = ${saved.theme}`);
-    } catch (error: unknown) {
-      setRequestState("error");
-      setMessage(formatIpcError(error));
+      const response = await login({ username: phone.trim(), password });
+      setWelcome(`欢迎回来，${response.data.additionalInformation.additionalInformation.realname || phone}`);
+    } catch (requestError: unknown) {
+      setError(formatLoginError(requestError));
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  const restoreDefaults = async () => {
-    setRequestState("loading");
-    try {
-      const defaults = await resetConfig();
-      setConfig(defaults);
-      setRequestState("ready");
-      setMessage("配置已恢复默认值");
-    } catch (error: unknown) {
-      setRequestState("error");
-      setMessage(formatIpcError(error));
-    }
-  };
-
-  const isBusy = requestState === "loading";
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10 text-foreground">
-      <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-5xl items-center">
-        <div className="grid w-full gap-10 rounded-3xl border border-border bg-card p-8 shadow-2xl shadow-slate-950/10 md:grid-cols-[1.1fr_0.9fr] md:p-12">
-          <div className="space-y-6">
-            <div className="inline-flex rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-              Shencom Desktop Platform
-            </div>
-            <div className="space-y-3">
-              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">ShenDesk</h1>
-              <p className="max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-                基于 Tauri Command 的类型安全 React ↔ Rust 通信示例。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button disabled={isBusy} onClick={() => void loadDesktopState()}>
-                刷新状态
-              </Button>
-              <Button disabled={isBusy || !config} variant="outline" onClick={() => void toggleTheme()}>
-                切换主题配置
-              </Button>
-              <Button disabled={isBusy} variant="ghost" onClick={() => void restoreDefaults()}>
-                恢复默认配置
-              </Button>
-            </div>
-            <p
-              aria-live="polite"
-              className={requestState === "error" ? "text-sm text-red-600" : "text-sm text-muted-foreground"}
-            >
-              {message}
-            </p>
+    <main className="min-h-screen bg-background px-5 py-8 text-foreground sm:px-8">
+      <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md items-center">
+        <div className="w-full rounded-3xl border border-border bg-card p-7 shadow-2xl shadow-slate-950/10 sm:p-10">
+          <div className="mb-9 space-y-3">
+            <p className="text-sm font-medium tracking-wide text-muted-foreground">Shencom Desktop Platform</p>
+            <h1 className="text-3xl font-semibold tracking-tight">登录 ShenDesk</h1>
+            <p className="text-base leading-7 text-muted-foreground">使用您的手机号和密码继续。</p>
           </div>
 
-          <div className="rounded-2xl border border-border bg-muted/50 p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Issue #7 IPC Status
-            </h2>
-            <dl className="mt-5 grid gap-4 text-sm">
-              <StatusRow label="Runtime" value={health?.status ?? "—"} />
-              <StatusRow label="Version" value={health?.version ?? "—"} />
-              <StatusRow
-                label="Uptime"
-                value={health ? `${health.uptimeSeconds}s` : "—"}
+          <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="phone">手机号</label>
+              <input
+                autoComplete="tel"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                id="phone"
+                inputMode="tel"
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="请输入手机号"
+                type="tel"
+                value={phone}
               />
-              <StatusRow label="Theme" value={config?.theme ?? "—"} />
-              <StatusRow label="Language" value={config?.language ?? "—"} />
-              <StatusRow
-                label="Auto Start"
-                value={config ? String(config.autoStart) : "—"}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="password">密码</label>
+              <input
+                autoComplete="current-password"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                id="password"
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="请输入密码"
+                type="password"
+                value={password}
               />
-            </dl>
-          </div>
+            </div>
+
+            {error && <p aria-live="polite" className="text-sm text-red-600">{error}</p>}
+            {welcome && <p aria-live="polite" className="text-sm text-emerald-700">{welcome}</p>}
+
+            <Button className="h-11 w-full" disabled={isSubmitting} size="lg" type="submit">
+              {isSubmitting ? "正在登录…" : "登录"}
+            </Button>
+          </form>
         </div>
       </section>
     </main>
   );
 }
 
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-xs font-medium">{value}</dd>
-    </div>
-  );
-}
-
-function formatIpcError(error: unknown): string {
+function formatLoginError(error: unknown): string {
   if (error instanceof ShenDeskIpcError) {
-    return `IPC 调用失败 [${error.code}]：${error.message}`;
+    return error.message;
   }
 
-  return error instanceof Error ? error.message : String(error);
+  return "登录失败，请重试。";
 }
 
 export default App;

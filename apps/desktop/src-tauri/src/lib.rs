@@ -10,6 +10,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .setup(crate::app::bootstrap::initialize)
         .invoke_handler(tauri::generate_handler![
+            crate::commands::auth::login,
             crate::commands::health::health_check,
             crate::commands::config::get_config,
             crate::commands::config::save_config,
