@@ -55,6 +55,20 @@ test("preserves stable file errors", () => {
   assert.equal(normalized.message, "没有权限访问指定文件或目录。");
 });
 
+test("preserves stable image errors", () => {
+  const normalized = normalizeIpcError({
+    code: "image_output_failed",
+    message: "无法写入输出文件，文件可能已存在或目录不可写。",
+  });
+
+  assert.ok(normalized instanceof ShenDeskIpcError);
+  assert.equal(normalized.code, "image_output_failed");
+  assert.equal(
+    normalized.message,
+    "无法写入输出文件，文件可能已存在或目录不可写。",
+  );
+});
+
 test("preserves stable plugin errors", () => {
   const normalized = normalizeIpcError({
     code: "plugin_invalid_package",

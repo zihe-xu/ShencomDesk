@@ -104,7 +104,7 @@ Tauri Updater 强制验证更新签名，ShenDesk 不提供关闭验证或 HTTP 
 
 ```bash
 cd apps/desktop
-npm run tauri signer generate -- -w ~/.tauri/shendesk.key
+pnpm tauri signer generate -- -w ~/.tauri/shendesk.key
 ```
 
 不要把生成的密钥文件复制到仓库目录。
@@ -173,7 +173,7 @@ Workflow 创建 Draft Release。维护者必须核对版本、平台资产、签
 根目录测试包含发布预检约束：
 
 ```bash
-npm run test
+pnpm test
 ```
 
 Rust CI 另外验证：

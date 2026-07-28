@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
 
       - name: Validate versions, tag, updater config, and signing material
         id: validate
@@ -80,11 +79,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+          cache: pnpm
 
       - name: Set up Rust target
         uses: dtolnay/rust-toolchain@stable
@@ -98,11 +102,11 @@ jobs:
           key: release-${{ matrix.target }}
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Generate platform application icons
         working-directory: apps/desktop
-        run: npm run tauri -- icon app-icon.svg
+        run: pnpm run tauri -- icon app-icon.svg
 
       - name: Build, sign, notarize, and upload macOS release assets
         if: runner.os == 'macOS'

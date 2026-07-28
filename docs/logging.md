@@ -24,7 +24,7 @@ ShenDesk 使用 `tracing`、`tracing-subscriber` 与 `tracing-appender` 构建�
 普通应用日志默认级别为 `info`。开发环境可以通过 `RUST_LOG` 调整：
 
 ```bash
-RUST_LOG=debug npm run tauri -- dev
+RUST_LOG=debug pnpm tauri -- dev
 ```
 
 `RUST_LOG` 只控制 `app.log.*`。错误日志和操作日志使用独立 Layer 过滤器，不会因为 `RUST_LOG=off` 而被关闭。

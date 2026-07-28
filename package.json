@@ -2,16 +2,13 @@
   "name": "shendesk",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.33.4",
   "scripts": {
-    "dev": "npm run dev --workspace @shendesk/desktop",
-    "build": "npm run build --workspace @shendesk/desktop",
-    "test": "npm run test --workspace @shendesk/desktop && node --test .github/scripts/resolve-post-merge-build.test.mjs .github/scripts/validate-release.test.mjs",
-    "preview": "npm run preview --workspace @shendesk/desktop",
-    "tauri": "npm run tauri --workspace @shendesk/desktop"
+    "dev": "pnpm --filter @shendesk/desktop run dev",
+    "build": "pnpm --filter @shendesk/desktop run build",
+    "test": "pnpm --filter @shendesk/desktop run test && node --test .github/scripts/resolve-post-merge-build.test.mjs .github/scripts/validate-release.test.mjs",
+    "preview": "pnpm --filter @shendesk/desktop run preview",
+    "tauri": "pnpm --filter @shendesk/desktop run tauri"
   },
   "engines": {
     "node": ">=22.12.0"

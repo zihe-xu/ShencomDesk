@@ -22,6 +22,7 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `start_file_watch` | `{ request: { path, recursive? } }` | `FileWatch` |
 | `stop_file_watch` | `{ watchId: string }` | watch ID |
 | `clear_file_cache` | 无 | 无 |
+| `compress_images` | `{ request: { items, outputDir, quality }, onProgress: Channel }` | `CompressImagesResult` |
 | `install_plugin` | `{ request: { manifestPath } }` | `PluginSnapshot` |
 | `list_plugins` | 无 | `PluginSnapshot[]` |
 | `get_plugin` | `{ pluginId }` | `PluginSnapshot` |
@@ -47,6 +48,8 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码、HTTP 状态语义、会话状态和登录/登出事件；Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 网络适配器负责，系统凭据库存取由同模块的 `KeyringAuthSessionStore` 负责。
 
 `AuthState` 只包含 `authenticated`、用户资料和过期时间，不包含 Access Token 或 Refresh Token。登录成功后 Token 只保留在 Rust Core 和系统凭据库中。
+
+图片压缩 Command 把阻塞工作交给 worker，并通过 `Channel<CompressionProgress>` 依次发送每张图片的 `processing` 和终态事件。`ImageService` 串行调度批次，`LocalImageProcessor` 使用 `image` 重编码 JPEG、使用 `oxipng` 无损优化 PNG。质量参数范围为 1–100 且只影响 JPEG。
 
 ## 稳定错误协议
 
@@ -78,6 +81,11 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 | `file_watch_unavailable` | 平台文件监听无法启动 |
 | `file_watch_not_found` | 指定 watch ID 不存在 |
 | `file_operation_failed` | 其他文件操作失败 |
+| `image_decoding_failed` | PNG/JPEG 内容无法解码 |
+| `image_encoding_failed` | JPEG 重编码或 PNG 优化失败 |
+| `image_format_unsupported` | 输入不是 PNG/JPEG |
+| `image_output_failed` | 输出目录不可写或同名文件已存在 |
+| `image_operation_failed` | 其他图片处理失败 |
 | `plugin_not_found` | 指定插件不存在 |
 | `plugin_already_installed` | 相同插件 ID 已安装 |
 | `plugin_invalid_package` | Manifest、模块、ABI 或沙箱校验失败 |
@@ -99,6 +107,7 @@ Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和�
 
 - 手机号、密码、Access Token 或 Refresh Token；
 - 本地文件路径；
+- 图片编解码器、输出路径或 OS 文件错误；
 - SQL 或数据库内部文本；
 - Rust 类型和堆栈细节；
 - 配置原始内容；
@@ -151,11 +160,11 @@ if (update) {
 }
 ```
 
-所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。认证、配置、任务、文件、插件和更新的类型安全封装分别位于 `src/services/auth.ts`、`src/services/config.ts`、`src/services/tasks.ts`、`src/services/files.ts`、`src/services/plugins.ts` 和 `src/services/updates.ts`。纯错误映射位于 `src/services/tauri-errors.ts`。
+所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。认证、配置、任务、文件、图片、插件和更新均通过 `src/services/` 中的类型安全封装调用。纯错误映射位于 `src/services/tauri-errors.ts`。
 
 ## 测试
 
 CI 同时执行：
 
-- Rust：验证认证成功码、会话持久化/恢复/登出、登录/登出事件、错误映射、错误脱敏、参数边界、服务生命周期、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
-- TypeScript：验证已知认证/配置/任务/文件/插件/更新错误保留、未知错误脱敏、空消息拒绝，并执行完整前端构建。
+- Rust：验证认证成功码、会话持久化/恢复/登出、登录/登出事件、错误映射、错误脱敏、参数边界、服务生命周期、图片请求/串行进度/JPEG 压缩与二次解码/输出不覆盖、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
+- TypeScript：验证已知认证/配置/任务/文件/图片/插件/更新错误保留、图片请求 envelope 与 Channel 回调、未知错误脱敏、空消息拒绝，并执行完整前端构建。

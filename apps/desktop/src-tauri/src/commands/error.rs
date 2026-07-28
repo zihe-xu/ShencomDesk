@@ -4,6 +4,7 @@ use crate::{
     application::{
         auth_service::{AuthServiceError, AuthServiceErrorKind},
         file_service::{FileServiceError, FileServiceErrorKind},
+        image_service::{ImageServiceError, ImageServiceErrorKind},
         plugin_service::{PluginServiceError, PluginServiceErrorKind},
         update_service::{UpdateServiceError, UpdateServiceErrorKind},
     },
@@ -28,6 +29,11 @@ pub enum IpcErrorCode {
     FileWatchUnavailable,
     FileWatchNotFound,
     FileOperationFailed,
+    ImageDecodingFailed,
+    ImageEncodingFailed,
+    ImageFormatUnsupported,
+    ImageOutputFailed,
+    ImageOperationFailed,
     PluginNotFound,
     PluginAlreadyInstalled,
     PluginInvalidPackage,
@@ -126,6 +132,22 @@ impl IpcError {
 
     pub fn file_operation_failed() -> Self {
         Self::new(IpcErrorCode::FileOperationFailed, "文件操作失败，请重试。")
+    }
+
+    pub fn for_image_operation(error: &ImageServiceError) -> Self {
+        let code = match error.kind() {
+            ImageServiceErrorKind::Validation => return Self::validation(),
+            ImageServiceErrorKind::Decoding => IpcErrorCode::ImageDecodingFailed,
+            ImageServiceErrorKind::Encoding => IpcErrorCode::ImageEncodingFailed,
+            ImageServiceErrorKind::Unsupported => IpcErrorCode::ImageFormatUnsupported,
+            ImageServiceErrorKind::Output => IpcErrorCode::ImageOutputFailed,
+            ImageServiceErrorKind::Operation => IpcErrorCode::ImageOperationFailed,
+        };
+        Self::new(code, error.safe_message())
+    }
+
+    pub fn image_operation_failed() -> Self {
+        Self::new(IpcErrorCode::ImageOperationFailed, "图片处理失败，请重试。")
     }
 
     pub fn for_plugin_operation(error: &PluginServiceError) -> Self {
@@ -307,6 +329,45 @@ mod tests {
         assert!(!serialized.contains("/Users/example"));
         assert!(!serialized.contains("offset"));
         assert_eq!(payload.message, "插件包无效或与当前版本不兼容。");
+    }
+
+    #[test]
+    fn maps_image_errors_without_exposing_paths_or_codec_details() {
+        let cases = [
+            (
+                ImageServiceErrorKind::Decoding,
+                IpcErrorCode::ImageDecodingFailed,
+            ),
+            (
+                ImageServiceErrorKind::Encoding,
+                IpcErrorCode::ImageEncodingFailed,
+            ),
+            (
+                ImageServiceErrorKind::Unsupported,
+                IpcErrorCode::ImageFormatUnsupported,
+            ),
+            (
+                ImageServiceErrorKind::Output,
+                IpcErrorCode::ImageOutputFailed,
+            ),
+            (
+                ImageServiceErrorKind::Operation,
+                IpcErrorCode::ImageOperationFailed,
+            ),
+        ];
+
+        for (kind, expected) in cases {
+            let internal = ImageServiceError::new(
+                kind,
+                "failed at /Users/example/private/photo.jpg with codec SECRET",
+            );
+            let payload = IpcError::for_image_operation(&internal);
+            let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+            assert_eq!(payload.code, expected);
+            assert!(!serialized.contains("/Users/example"));
+            assert!(!serialized.contains("SECRET"));
+        }
     }
 
     #[test]

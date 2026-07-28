@@ -22,19 +22,19 @@ docs                项目文档
 
 ## 本地开发
 
-仓库提交 `package-lock.json` 与 `apps/desktop/src-tauri/Cargo.lock`，开发和 CI 使用相同的依赖解析结果。
+仓库提交 `pnpm-lock.yaml` 与 `apps/desktop/src-tauri/Cargo.lock`，开发和 CI 使用相同的依赖解析结果。
 
 ```bash
-npm ci
-npm run dev
-npm run tauri -- dev
+pnpm install --frozen-lockfile
+pnpm dev
+pnpm tauri -- dev
 ```
 
 ## 构建
 
 ```bash
-npm run build
-npm run tauri -- build
+pnpm build
+pnpm tauri -- build
 ```
 
 ## 质量验证
@@ -42,15 +42,19 @@ npm run tauri -- build
 Pull Request 与 `main` 分支由 GitHub Actions 自动执行：
 
 ```bash
-npm ci
-npm run test
-npm run build
+pnpm install --frozen-lockfile
+pnpm test
+pnpm build
 cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 ```
 
-`npm run test` 同时覆盖前端错误映射、合并后构建判定和签名发布预检约束。
+`pnpm test` 同时覆盖前端错误映射、图片压缩 IPC、合并后构建判定和签名发布预检约束。
+
+## 图片压缩
+
+登录后可批量选择或拖入 PNG、JPEG 图片，在本地完成压缩并输出到用户选择的目录。JPEG 质量可调，PNG 使用无损优化；应用不会上传图片，也不会覆盖原图或已有输出文件。
 
 ## Phase 3：Plugin System
 

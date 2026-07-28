@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod database;
 pub mod filesystem;
+pub mod image;
 pub mod logging;
 pub mod plugins;
 pub mod updater;

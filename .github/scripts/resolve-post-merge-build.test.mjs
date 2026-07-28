@@ -142,20 +142,20 @@ test("platform configs declare generated installer icons", () => {
   assert.deepEqual(macosConfig.bundle.icon, ["icons/icon.icns"]);
 });
 
-test("Windows build invokes npm through cmd.exe", () => {
+test("Windows build invokes pnpm through cmd.exe", () => {
   const command = resolveBuildProcess("win32", {
     ComSpec: "C:\\Windows\\System32\\cmd.exe",
   });
 
   assert.deepEqual(command, {
     command: "C:\\Windows\\System32\\cmd.exe",
-    args: ["/d", "/s", "/c", "npm run tauri -- build"],
+    args: ["/d", "/s", "/c", "pnpm run tauri -- build"],
   });
 });
 
-test("non-Windows build invokes npm directly", () => {
+test("non-Windows build invokes pnpm directly", () => {
   assert.deepEqual(resolveBuildProcess("linux", {}), {
-    command: "npm",
+    command: "pnpm",
     args: ["run", "tauri", "--", "build"],
   });
 });

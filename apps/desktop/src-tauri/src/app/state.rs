@@ -7,6 +7,7 @@ use crate::application::{
     auth_service::{AuthBackend, AuthService, AuthServiceError, AuthSessionStore},
     event_bus::EventBus,
     file_service::{FileRepository, FileService},
+    image_service::{ImageProcessor, ImageService},
     plugin_service::{PluginRepository, PluginRuntime, PluginService},
     task_service::TaskManager,
     update_service::{UpdateBackend, UpdateService},
@@ -20,6 +21,7 @@ pub struct AppState {
     task_manager: TaskManager,
     auth_service: AuthService,
     file_service: FileService,
+    image_service: ImageService,
     plugin_service: PluginService,
     update_service: UpdateService,
 }
@@ -27,6 +29,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         file_repository: Arc<dyn FileRepository>,
+        image_processor: Arc<dyn ImageProcessor>,
         plugin_repository: Arc<dyn PluginRepository>,
         plugin_runtime: Arc<dyn PluginRuntime>,
         update_backend: Arc<dyn UpdateBackend>,
@@ -37,6 +40,7 @@ impl AppState {
         let task_manager = TaskManager::with_events(event_bus.clone());
         let auth_service = AuthService::new(auth_backend, auth_session_store, event_bus.clone())?;
         let file_service = FileService::new(file_repository, event_bus.clone());
+        let image_service = ImageService::new(image_processor);
         let plugin_service =
             PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
         let update_service = UpdateService::new(update_backend, event_bus.clone());
@@ -47,6 +51,7 @@ impl AppState {
             task_manager,
             auth_service,
             file_service,
+            image_service,
             plugin_service,
             update_service,
         })
@@ -70,6 +75,10 @@ impl AppState {
 
     pub fn file_service(&self) -> &FileService {
         &self.file_service
+    }
+
+    pub fn image_service(&self) -> &ImageService {
+        &self.image_service
     }
 
     pub fn plugin_service(&self) -> &PluginService {
@@ -102,6 +111,7 @@ mod tests {
         },
         infrastructure::{
             filesystem::LocalFileRepository,
+            image::LocalImageProcessor,
             plugins::{LocalPluginRepository, WasmtimePluginRuntime},
         },
     };
@@ -172,6 +182,7 @@ mod tests {
         ));
         let state = AppState::new(
             Arc::new(LocalFileRepository::default()),
+            Arc::new(LocalImageProcessor),
             Arc::new(
                 LocalPluginRepository::new(&plugin_root)
                     .expect("plugin repository should initialize"),
