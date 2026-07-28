@@ -133,6 +133,18 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     workflow,
     /runner: macos-26-intel\s*\n\s*target: x86_64-apple-darwin/,
   );
+  assert.match(
+    workflow,
+    /target: aarch64-apple-darwin[\s\S]*?args: --target aarch64-apple-darwin --bundles app,dmg/,
+  );
+  assert.match(
+    workflow,
+    /target: x86_64-apple-darwin[\s\S]*?args: --target x86_64-apple-darwin --bundles app,dmg/,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /target: (?:aarch64|x86_64)-apple-darwin --bundles dmg(?:\s|$)/,
+  );
   assert.match(workflow, /releaseDraft: true/);
 });
 
