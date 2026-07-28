@@ -5,7 +5,7 @@ use tauri::{App, Manager};
 use crate::{
     application::config_service::ConfigService,
     infrastructure::{
-        auth::ShencomAuthBackend,
+        auth::{KeyringAuthSessionStore, ShencomAuthBackend},
         database::service::DatabaseService,
         filesystem::LocalFileRepository,
         image::LocalImageProcessor,
@@ -58,6 +58,16 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     })?);
     let update_backend = Arc::new(TauriUpdateBackend::new(app.handle().clone()));
     let auth_backend = Arc::new(ShencomAuthBackend::test_environment());
+    let auth_session_store = Arc::new(match KeyringAuthSessionStore::new() {
+        Ok(store) => store,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "authentication session store is unavailable; starting without persistence"
+            );
+            KeyringAuthSessionStore::disabled()
+        }
+    });
     let state = AppState::new(
         Arc::new(LocalFileRepository::default()),
         Arc::new(LocalImageProcessor),
@@ -65,7 +75,12 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         plugin_runtime,
         update_backend,
         auth_backend,
-    );
+        auth_session_store,
+    )
+    .map_err(|error| {
+        tracing::error!(error = %error, "authentication service initialization failed");
+        error
+    })?;
     let plugin_report = state.plugin_service().restore_enabled_plugins();
     tracing::info!(
         restored = plugin_report.restored,

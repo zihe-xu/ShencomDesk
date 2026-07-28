@@ -3,24 +3,10 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface LoginResponse {
-  data: LoginData;
-  errcode: string;
-  errmsg: string;
-}
-
-export interface LoginData {
-  additionalInformation: AccessToken;
-}
-
-export interface AccessToken {
-  additionalInformation: UserInformation;
-  expiration: number;
-  expiresIn: number;
-  refreshToken: unknown;
-  scope: string[];
-  tokenType: string;
-  value: string;
+export interface AuthState {
+  authenticated: boolean;
+  user: UserInformation | null;
+  expiresAt: number | null;
 }
 
 export interface UserInformation {
@@ -38,6 +24,18 @@ export type CommandInvoker = <T>(
 export function loginWithInvoker(
   invoke: CommandInvoker,
   request: LoginRequest,
-): Promise<LoginResponse> {
-  return invoke<LoginResponse>("login", { request });
+): Promise<AuthState> {
+  return invoke<AuthState>("login", { request });
+}
+
+export function getAuthStateWithInvoker(
+  invoke: CommandInvoker,
+): Promise<AuthState> {
+  return invoke<AuthState>("get_auth_state");
+}
+
+export function logoutWithInvoker(
+  invoke: CommandInvoker,
+): Promise<AuthState> {
+  return invoke<AuthState>("logout");
 }

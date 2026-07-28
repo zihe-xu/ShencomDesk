@@ -44,6 +44,9 @@ interface SelectedImage {
 
 interface ImageCompressionProps {
   displayName: string;
+  error?: string;
+  isLoggingOut?: boolean;
+  onLogout?: () => void;
 }
 
 const IMAGE_FILTERS = [
@@ -53,7 +56,12 @@ const IMAGE_FILTERS = [
   },
 ];
 
-export function ImageCompression({ displayName }: ImageCompressionProps) {
+export function ImageCompression({
+  displayName,
+  error,
+  isLoggingOut = false,
+  onLogout,
+}: ImageCompressionProps) {
   const [items, setItems] = useState<SelectedImage[]>([]);
   const [quality, setQuality] = useState(75);
   const [outputDir, setOutputDir] = useState("");
@@ -246,9 +254,28 @@ export function ImageCompression({ displayName }: ImageCompressionProps) {
               PNG 无损优化，JPEG 可调质量。所有图片仅在本机处理。
             </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            欢迎回来，<span className="font-medium text-foreground">{displayName}</span>
-          </p>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <p className="text-sm text-muted-foreground">
+              欢迎回来，
+              <span className="font-medium text-foreground">{displayName}</span>
+            </p>
+            {onLogout && (
+              <Button
+                disabled={isLoggingOut || isCompressing}
+                onClick={onLogout}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {isLoggingOut ? "正在退出…" : "退出登录"}
+              </Button>
+            )}
+            {error && (
+              <p className="text-sm text-red-600" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
         </header>
 
         <Card>

@@ -23,6 +23,7 @@ pub enum EventKind {
     PluginExecuted,
     PluginRemoved,
     UserLoggedIn,
+    UserLoggedOut,
     UpdateAvailable,
 }
 
@@ -47,6 +48,7 @@ pub enum AppEvent {
     PluginExecuted { execution: PluginExecution },
     PluginRemoved { plugin_id: PluginId },
     UserLoggedIn { user_id: String },
+    UserLoggedOut { user_id: String },
     UpdateAvailable { version: String },
 }
 
@@ -66,6 +68,7 @@ impl AppEvent {
             Self::PluginExecuted { .. } => EventKind::PluginExecuted,
             Self::PluginRemoved { .. } => EventKind::PluginRemoved,
             Self::UserLoggedIn { .. } => EventKind::UserLoggedIn,
+            Self::UserLoggedOut { .. } => EventKind::UserLoggedOut,
             Self::UpdateAvailable { .. } => EventKind::UpdateAvailable,
         }
     }
@@ -120,6 +123,13 @@ mod tests {
             }
             .kind(),
             EventKind::PluginRemoved
+        );
+        assert_eq!(
+            AppEvent::UserLoggedOut {
+                user_id: "user-id".to_owned(),
+            }
+            .kind(),
+            EventKind::UserLoggedOut
         );
     }
 

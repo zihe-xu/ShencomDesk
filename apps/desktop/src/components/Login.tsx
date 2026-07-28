@@ -32,13 +32,12 @@ export function Login({ onSuccess }: LoginProps) {
 
     setIsSubmitting(true);
     try {
-      const response = await login({
+      const state = await login({
         username: phone.trim(),
         password,
       });
       onSuccess(
-        response.data.additionalInformation.additionalInformation.realname ||
-          phone.trim(),
+        state.user?.realname || state.user?.username || phone.trim(),
       );
     } catch (requestError: unknown) {
       setError(formatLoginError(requestError));

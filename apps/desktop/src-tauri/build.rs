@@ -1,5 +1,7 @@
 const COMMANDS: &[&str] = &[
     "login",
+    "get_auth_state",
+    "logout",
     "health_check",
     "get_config",
     "save_config",

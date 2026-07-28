@@ -6,7 +6,9 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 
 | Command | 输入 | 输出 |
 |---|---|---|
-| `login` | `{ request: { username, password } }` | `LoginResponse` |
+| `login` | `{ request: { username, password } }` | `AuthState` |
+| `get_auth_state` | 无 | `AuthState` |
+| `logout` | 无 | `AuthState` |
 | `health_check` | 无 | `HealthStatus` |
 | `get_config` | 无 | `AppConfig` |
 | `save_config` | `{ config: AppConfig }` | 归一化后的 `AppConfig` |
@@ -43,7 +45,9 @@ React Service
 
 Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O、WASM 运行时逻辑或更新网络请求。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client、读取更新地址或处理签名。
 
-认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码和 HTTP 状态语义，Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 适配器负责。
+认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码、HTTP 状态语义、会话状态和登录/登出事件；Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 网络适配器负责，系统凭据库存取由同模块的 `KeyringAuthSessionStore` 负责。
+
+`AuthState` 只包含 `authenticated`、用户资料和过期时间，不包含 Access Token 或 Refresh Token。登录成功后 Token 只保留在 Rust Core 和系统凭据库中。
 
 图片压缩 Command 把阻塞工作交给 worker，并通过 `Channel<CompressionProgress>` 依次发送每张图片的 `processing` 和终态事件。`ImageService` 串行调度批次，`LocalImageProcessor` 使用 `image` 重编码 JPEG、使用 `oxipng` 无损优化 PNG。质量参数范围为 1–100 且只影响 JPEG。
 
@@ -129,6 +133,8 @@ const response = await login({
   username: phone,
   password,
 });
+const restored = await getAuthState();
+await logout();
 ```
 
 插件：
@@ -160,5 +166,5 @@ if (update) {
 
 CI 同时执行：
 
-- Rust：验证图片请求、串行进度、错误脱敏、JPEG 压缩与二次解码、输出不覆盖，以及既有服务生命周期和安全边界。
-- TypeScript：验证图片请求 envelope、Channel 回调、稳定错误码、未知错误脱敏，并执行完整前端构建。
+- Rust：验证认证成功码、会话持久化/恢复/登出、登录/登出事件、错误映射、错误脱敏、参数边界、服务生命周期、图片请求/串行进度/JPEG 压缩与二次解码/输出不覆盖、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
+- TypeScript：验证已知认证/配置/任务/文件/图片/插件/更新错误保留、图片请求 envelope 与 Channel 回调、未知错误脱敏、空消息拒绝，并执行完整前端构建。

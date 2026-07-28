@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "allow-login",
+    "allow-get-auth-state",
+    "allow-logout",
     "allow-health-check",
     "allow-get-config",
     "allow-save-config",
