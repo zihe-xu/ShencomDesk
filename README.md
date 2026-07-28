@@ -73,9 +73,9 @@ ShenDesk 使用 Tauri Updater 与 GitHub Releases 提供 macOS / Windows 签名�
 - 更新 URL、签名和底层网络/安装错误不会返回 WebView。
 - 下载进度通过有序 Tauri Channel 发送。
 - 普通开发构建可以不包含公钥；检查更新会安全返回 `update_not_configured`。
-- `v<version>` Tag 触发 Draft Release，串行生成 macOS ARM64、macOS Intel、Windows x64 安装包、签名和聚合后的 `latest.json`。
+- `v<version>` Tag 触发 Draft Release，串行生成 macOS ARM64、macOS Intel、Windows x64 安装包、更新签名和聚合后的 `latest.json`；macOS 正式包还必须通过 Developer ID 签名与 Apple 公证。
 
-签名发布前需要配置 Repository Variable `SHENDESK_UPDATER_PUBLIC_KEY`、Secret `TAURI_SIGNING_PRIVATE_KEY`，以及可选的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。完整运行时、密钥和发布流程见 [`docs/auto-update.md`](docs/auto-update.md)。
+签名发布前需要配置 Tauri Updater 密钥，以及 macOS Developer ID 证书与 Apple 公证材料。缺少任一必需配置时，Tag 发布会在跨平台构建前安全失败。完整变量、Secret、运行时和发布流程见 [`docs/auto-update.md`](docs/auto-update.md)。
 
 ## 合并后自动化构建
 

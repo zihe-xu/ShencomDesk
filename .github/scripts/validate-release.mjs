@@ -38,6 +38,12 @@ export function validateReleaseConfiguration({
   tagName,
   publicKey,
   privateKeyConfigured,
+  appleCertificateConfigured,
+  appleCertificatePasswordConfigured,
+  appleSigningIdentityConfigured,
+  appleIdConfigured,
+  applePasswordConfigured,
+  appleTeamIdConfigured,
 }) {
   const versions = {
     rootPackage: rootPackage?.version,
@@ -85,11 +91,29 @@ export function validateReleaseConfiguration({
     throw new Error("TAURI_SIGNING_PRIVATE_KEY is not configured");
   }
 
+  const appleSigningRequirements = {
+    APPLE_CERTIFICATE: appleCertificateConfigured,
+    APPLE_CERTIFICATE_PASSWORD: appleCertificatePasswordConfigured,
+    APPLE_SIGNING_IDENTITY: appleSigningIdentityConfigured,
+    APPLE_ID: appleIdConfigured,
+    APPLE_PASSWORD: applePasswordConfigured,
+    APPLE_TEAM_ID: appleTeamIdConfigured,
+  };
+  for (const [name, configured] of Object.entries(
+    appleSigningRequirements,
+  )) {
+    if (configured !== true) {
+      throw new Error(`${name} is not configured`);
+    }
+  }
+
   return {
     version,
     tagName,
     updaterArtifacts: true,
     signingMaterialConfigured: true,
+    appleCodeSigningConfigured: true,
+    appleNotarizationConfigured: true,
   };
 }
 
@@ -133,6 +157,17 @@ async function runCli() {
     publicKey: process.env.SHENDESK_UPDATER_PUBLIC_KEY ?? "",
     privateKeyConfigured:
       process.env.TAURI_SIGNING_PRIVATE_KEY_CONFIGURED === "true",
+    appleCertificateConfigured:
+      process.env.APPLE_CERTIFICATE_CONFIGURED === "true",
+    appleCertificatePasswordConfigured:
+      process.env.APPLE_CERTIFICATE_PASSWORD_CONFIGURED === "true",
+    appleSigningIdentityConfigured:
+      process.env.APPLE_SIGNING_IDENTITY_CONFIGURED === "true",
+    appleIdConfigured: process.env.APPLE_ID_CONFIGURED === "true",
+    applePasswordConfigured:
+      process.env.APPLE_PASSWORD_CONFIGURED === "true",
+    appleTeamIdConfigured:
+      process.env.APPLE_TEAM_ID_CONFIGURED === "true",
   });
 
   if (process.env.GITHUB_OUTPUT) {
@@ -152,7 +187,9 @@ async function runCli() {
         `- Tag: \`${result.tagName}\``,
         "- Updater artifacts: enabled by release-only config",
         "- Updater signing material: configured",
-        "- Signing private key content: not exposed to preflight",
+        "- Apple Developer ID signing material: configured",
+        "- Apple notarization material: configured",
+        "- Signing secret contents: not exposed to preflight",
         "",
       ].join("\n"),
       "utf8",

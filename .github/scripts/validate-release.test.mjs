@@ -18,6 +18,12 @@ function validInput(overrides = {}) {
     tagName: "v1.2.3",
     publicKey: "public-key",
     privateKeyConfigured: true,
+    appleCertificateConfigured: true,
+    appleCertificatePasswordConfigured: true,
+    appleSigningIdentityConfigured: true,
+    appleIdConfigured: true,
+    applePasswordConfigured: true,
+    appleTeamIdConfigured: true,
     ...overrides,
   };
 }
@@ -37,6 +43,8 @@ test("accepts a matching signed release configuration", () => {
     tagName: "v1.2.3",
     updaterArtifacts: true,
     signingMaterialConfigured: true,
+    appleCodeSigningConfigured: true,
+    appleNotarizationConfigured: true,
   });
 });
 
@@ -69,6 +77,21 @@ test("fails closed when signing material is missing", () => {
       ),
     /TAURI_SIGNING_PRIVATE_KEY is not configured/,
   );
+
+  for (const [field, environmentVariable] of [
+    ["appleCertificateConfigured", "APPLE_CERTIFICATE"],
+    ["appleCertificatePasswordConfigured", "APPLE_CERTIFICATE_PASSWORD"],
+    ["appleSigningIdentityConfigured", "APPLE_SIGNING_IDENTITY"],
+    ["appleIdConfigured", "APPLE_ID"],
+    ["applePasswordConfigured", "APPLE_PASSWORD"],
+    ["appleTeamIdConfigured", "APPLE_TEAM_ID"],
+  ]) {
+    assert.throws(
+      () =>
+        validateReleaseConfiguration(validInput({ [field]: false })),
+      new RegExp(`${environmentVariable} is not configured`),
+    );
+  }
 });
 
 test("keeps updater artifact generation release-only", () => {
@@ -114,9 +137,19 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     workflow,
     /TAURI_SIGNING_PRIVATE_KEY_CONFIGURED: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY != '' \}\}/,
   );
+  for (const configuredVariable of [
+    "APPLE_CERTIFICATE_CONFIGURED",
+    "APPLE_CERTIFICATE_PASSWORD_CONFIGURED",
+    "APPLE_SIGNING_IDENTITY_CONFIGURED",
+    "APPLE_ID_CONFIGURED",
+    "APPLE_PASSWORD_CONFIGURED",
+    "APPLE_TEAM_ID_CONFIGURED",
+  ]) {
+    assert.match(workflow, new RegExp(`${configuredVariable}: \\$\\{\\{`));
+  }
   assert.equal(
     [...workflow.matchAll(/^\s*TAURI_SIGNING_PRIVATE_KEY:\s/gm)].length,
-    1,
+    2,
   );
   assert.match(
     workflow,
@@ -145,6 +178,32 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     workflow,
     /target: (?:aarch64|x86_64)-apple-darwin --bundles dmg(?:\s|$)/,
   );
+  const macosBuildStep = workflow.match(
+    /- name: Build, sign, notarize, and upload macOS release assets[\s\S]*?(?=\n\s+- name: Verify macOS)/,
+  )?.[0];
+  const windowsBuildStep = workflow.match(
+    /- name: Build, sign, and upload Windows updater release assets[\s\S]*$/,
+  )?.[0];
+  assert.ok(macosBuildStep);
+  assert.ok(windowsBuildStep);
+  for (const environmentVariable of [
+    "APPLE_CERTIFICATE",
+    "APPLE_CERTIFICATE_PASSWORD",
+    "APPLE_SIGNING_IDENTITY",
+    "APPLE_ID",
+    "APPLE_PASSWORD",
+    "APPLE_TEAM_ID",
+  ]) {
+    assert.match(macosBuildStep, new RegExp(`${environmentVariable}: \\$\\{\\{`));
+    assert.doesNotMatch(windowsBuildStep, new RegExp(environmentVariable));
+  }
+  assert.match(workflow, /codesign --verify --deep --strict/);
+  assert.match(
+    workflow,
+    /Authority=Developer ID Application:/,
+  );
+  assert.match(workflow, /xcrun stapler validate/);
+  assert.match(workflow, /spctl --assess --type execute/);
   assert.match(workflow, /releaseDraft: true/);
 });
 

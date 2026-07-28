@@ -65,23 +65,32 @@ shendesk-<platform>-<short-sha>-diagnostics
 
 ## 签名发布
 
-`.github/workflows/release.yml` 只响应 `v*` 标签，不响应 Pull Request。预检脚本 `.github/scripts/validate-release.mjs` 在运行任何跨平台打包前验证版本、标签、release-only Tauri config 和签名材料配置状态；私钥正文不会进入预检进程。
+`.github/workflows/release.yml` 只响应 `v*` 标签，不响应 Pull Request。预检脚本 `.github/scripts/validate-release.mjs` 在运行任何跨平台打包前验证版本、标签、release-only Tauri config、Updater 签名材料、Apple Developer ID 证书和公证材料配置状态；Secret 正文不会进入预检进程。
 
 发布矩阵使用固定、原生架构 Runner：
 
 | 目标 | Runner | Bundle | Updater artifact |
 |---|---|---|---|
-| macOS Apple Silicon | `macos-26` | DMG | `.app.tar.gz` + `.sig` |
-| macOS Intel | `macos-26-intel` | DMG | `.app.tar.gz` + `.sig` |
+| macOS Apple Silicon | `macos-26` | Developer ID 签名并公证的 DMG | `.app.tar.gz` + `.sig` |
+| macOS Intel | `macos-26-intel` | Developer ID 签名并公证的 DMG | `.app.tar.gz` + `.sig` |
 | Windows x64 | `windows-2022` | MSI | `.msi` + `.sig` |
 
-`tauri-apps/tauri-action` 将平台资产和 `latest.json` 上传到同一 Draft Release。Draft 必须在人工核验后发布，发布后客户端固定的 `/releases/latest/download/latest.json` 才能发现它。
+`tauri-apps/tauri-action` 将平台资产和 `latest.json` 上传到同一 Draft Release。macOS 构建后还会使用 `codesign`、`stapler` 和 Gatekeeper `spctl` 验证 Developer ID 签名、公证票据和系统信任判定；任一步失败都会使发布失败。Draft 必须在人工核验后发布，发布后客户端固定的 `/releases/latest/download/latest.json` 才能发现它。
 
-签名发布使用：
+Updater 签名使用：
 
 - Repository Variable：`SHENDESK_UPDATER_PUBLIC_KEY`
 - Secret：`TAURI_SIGNING_PRIVATE_KEY`
 - 可选 Secret：`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+macOS Developer ID 签名与 Apple 公证使用：
+
+- Repository Variable：`APPLE_SIGNING_IDENTITY`
+- Repository Variable：`APPLE_TEAM_ID`
+- Secret：`APPLE_CERTIFICATE`（Developer ID Application `.p12` 的 Base64 内容）
+- Secret：`APPLE_CERTIFICATE_PASSWORD`
+- Secret：`APPLE_ID`
+- Secret：`APPLE_PASSWORD`（Apple ID 的 App 专用密码）
 
 `tauri.release.conf.json` 仅在发布 Workflow 叠加，启用 `bundle.createUpdaterArtifacts`。基础 `tauri.conf.json` 保持关闭，保证普通 CI 和本地构建不依赖发布私钥。
 
@@ -100,11 +109,11 @@ shendesk-<platform>-<short-sha>-diagnostics
 
 - 仅受保护版本标签触发，不在 PR 代码上下文暴露 Secret。
 - Workflow 默认 `contents: read`；只有 release Job 提升为 `contents: write`。
-- 预检只接收私钥是否已配置的布尔值，不接收或输出私钥正文。
-- 发布 Job 只把私钥注入最终 Tauri 签名步骤。
+- 预检只接收 Secret 或 Variable 是否已配置的布尔值，不接收或输出 Secret 正文。
+- Updater 私钥只注入对应平台的最终 Tauri 构建步骤；Apple 证书和公证 Secret 只注入 macOS Tauri 构建步骤，Windows Job 不接收 Apple 材料。
 - 持有私钥的 `tauri-action` 使用完整提交 SHA 固定版本，避免可变标签改变执行代码。
 - Release 默认为 Draft，避免未审核清单立即成为 `latest`。
-- 更新签名和 OS 平台代码签名是不同信任层；Apple notarization 与 Windows Authenticode 需独立配置。
+- 更新签名和 OS 平台代码签名是不同信任层；macOS 正式发布强制 Developer ID 签名与 Apple 公证，Windows Authenticode 仍需独立配置。
 
 ## 应用图标
 
@@ -125,6 +134,6 @@ node --test .github/scripts/resolve-post-merge-build.test.mjs
 node --test .github/scripts/validate-release.test.mjs
 ```
 
-测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Windows Runner、发布版本漂移、错误标签、缺失密钥、release-only updater artifacts、发布 Workflow 的 tag-only/Secret 边界，以及 ARM/Intel 原生 macOS Runner 约束。
+测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Windows Runner、发布版本漂移、错误标签、缺失 Updater 或 Apple 签名材料、release-only updater artifacts、发布 Workflow 的 tag-only/Secret 边界、macOS 签名/公证验收命令，以及 ARM/Intel 原生 macOS Runner 约束。
 
 Workflow 合并后，应通过 `workflow_dispatch` 验证普通 macOS/Windows 打包；首次签名发布则在配置密钥后使用新的 SemVer 标签，并在 Draft Release 中核对所有平台资产与 `latest.json`。

@@ -37,6 +37,12 @@ jobs:
         env:
           SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_CONFIGURED: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          APPLE_CERTIFICATE_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          APPLE_CERTIFICATE_PASSWORD_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+          APPLE_SIGNING_IDENTITY_CONFIGURED: ${{ vars.APPLE_SIGNING_IDENTITY != '' }}
+          APPLE_ID_CONFIGURED: ${{ secrets.APPLE_ID != '' }}
+          APPLE_PASSWORD_CONFIGURED: ${{ secrets.APPLE_PASSWORD != '' }}
+          APPLE_TEAM_ID_CONFIGURED: ${{ vars.APPLE_TEAM_ID != '' }}
         run: node .github/scripts/validate-release.mjs
 
   release:
@@ -98,7 +104,56 @@ jobs:
         working-directory: apps/desktop
         run: npm run tauri -- icon app-icon.svg
 
-      - name: Build, sign, and upload updater release assets
+      - name: Build, sign, notarize, and upload macOS release assets
+        if: runner.os == 'macOS'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: ShenDesk ${{ github.ref_name }}
+          releaseBody: Signed ShenDesk desktop installers and Tauri updater metadata.
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: false
+          retryAttempts: 2
+          args: ${{ matrix.args }}
+
+      - name: Verify macOS Developer ID signature and notarization
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop
+        env:
+          MACOS_APP_PATH: src-tauri/target/${{ matrix.target }}/release/bundle/macos/ShenDesk.app
+        run: |
+          if [[ ! -d "$MACOS_APP_PATH" ]]; then
+            echo "::error::Expected macOS application bundle was not generated"
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$MACOS_APP_PATH"
+          signature_details="$(codesign -dvvv "$MACOS_APP_PATH" 2>&1)"
+          if [[ "$signature_details" != *"Authority=Developer ID Application:"* ]]; then
+            echo "::error::Application is not signed with a Developer ID Application certificate"
+            exit 1
+          fi
+
+          xcrun stapler validate "$MACOS_APP_PATH"
+          spctl --assess --type execute --verbose=2 "$MACOS_APP_PATH"
+
+      - name: Build, sign, and upload Windows updater release assets
+        if: runner.os == 'Windows'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

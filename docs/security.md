@@ -84,4 +84,4 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - release-only Tauri config 才启用 updater artifacts，普通 CI 不接触签名材料。
 - Release 默认 Draft，核验多平台资产与 `latest.json` 后才发布。
 
-更新签名只证明更新包由对应私钥签发，不代替 Apple notarization 或 Windows Authenticode。密钥生成、发布步骤和轮换注意事项见 `docs/auto-update.md`。
+更新签名只证明更新包由对应私钥签发，不代替操作系统平台信任。macOS 正式 Tag 发布另外强制 Developer ID Application 签名、Apple 公证与 Gatekeeper 验证；Windows Authenticode 仍需独立配置。密钥生成、发布步骤和轮换注意事项见 `docs/auto-update.md`。
