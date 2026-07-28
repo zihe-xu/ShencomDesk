@@ -20,6 +20,8 @@
     "allow-start-file-watch",
     "allow-stop-file-watch",
     "allow-clear-file-cache",
+    "allow-compress-images",
+    "dialog:allow-open",
     "allow-install-plugin",
     "allow-list-plugins",
     "allow-get-plugin",

@@ -8,6 +8,7 @@ pub mod utils;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(crate::app::bootstrap::initialize)
         .invoke_handler(tauri::generate_handler![
             crate::commands::auth::login,
@@ -24,6 +25,7 @@ pub fn run() {
             crate::commands::file::start_file_watch,
             crate::commands::file::stop_file_watch,
             crate::commands::file::clear_file_cache,
+            crate::commands::image::compress_images,
             crate::commands::plugin::install_plugin,
             crate::commands::plugin::list_plugins,
             crate::commands::plugin::get_plugin,

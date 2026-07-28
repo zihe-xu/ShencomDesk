@@ -8,6 +8,7 @@ use crate::{
         auth::ShencomAuthBackend,
         database::service::DatabaseService,
         filesystem::LocalFileRepository,
+        image::LocalImageProcessor,
         logging,
         plugins::{LocalPluginRepository, WasmtimePluginRuntime},
         updater::TauriUpdateBackend,
@@ -59,6 +60,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let auth_backend = Arc::new(ShencomAuthBackend::test_environment());
     let state = AppState::new(
         Arc::new(LocalFileRepository::default()),
+        Arc::new(LocalImageProcessor),
         plugin_repository,
         plugin_runtime,
         update_backend,
@@ -74,6 +76,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     logging::record_operation("plugin_service.initialize", "success");
     logging::record_operation("update_service.initialize", "success");
     logging::record_operation("auth_service.initialize", "success");
+    logging::record_operation("image_service.initialize", "success");
 
     app.manage(database);
     app.manage(state);

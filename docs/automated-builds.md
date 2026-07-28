@@ -124,7 +124,7 @@ macOS Developer ID 签名与 Apple 公证使用：
 根目录测试命令同时覆盖合并判定、Workflow 约束与签名发布预检：
 
 ```bash
-npm run test
+pnpm test
 ```
 
 也可以分别运行：

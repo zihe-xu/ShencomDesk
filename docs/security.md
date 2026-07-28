@@ -16,7 +16,7 @@ ShenDesk 使用 Tauri 2 的 CSP、Permissions 与 Capabilities 建立 WebView �
 
 ## 自定义命令权限
 
-`build.rs` 使用 `AppManifest::commands` 注册所有前端可调用的应用命令。除健康、配置、任务和文件命令外，插件能力只暴露以下 7 个入口：
+`build.rs` 使用 `AppManifest::commands` 注册所有前端可调用的应用命令。除健康、配置、任务、文件和图片命令外，插件能力只暴露以下 7 个入口：
 
 - `install_plugin`
 - `list_plugins`
@@ -25,6 +25,10 @@ ShenDesk 使用 Tauri 2 的 CSP、Permissions 与 Capabilities 建立 WebView �
 - `disable_plugin`
 - `execute_plugin_command`
 - `uninstall_plugin`
+
+图片压缩只暴露一个本地入口：
+
+- `compress_images`
 
 自动更新只暴露 ShenDesk 自有的两个入口：
 
@@ -57,6 +61,14 @@ WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令�
 ## 本地文件命令
 
 FileService 命令要求绝对路径，并限制读取大小、索引条目数和递归深度。文件内容不会写入日志或 EventBus；返回 WebView 的错误不会包含本地路径和原始 OS 错误。产品 UI 应通过可信系统选择流程取得路径。
+
+## 本地图片压缩
+
+- WebView 仅获得 `dialog:allow-open`，用于选择输入图片和输出目录；不授予通用文件系统插件权限。
+- `compress_images` 只接受绝对路径、PNG/JPEG 输入和 1–100 的质量值，所有处理均在本地完成且不会发起网络请求。
+- 输出使用排他创建。原文件、同名输出文件以及通过符号链接指向的已有文件都不会被覆盖；冲突项返回固定脱敏错误并继续批次。
+- PNG 使用无损优化；JPEG 重编码可能移除 EXIF 等元数据，本期不承诺元数据保留。
+- 逐项 Channel 错误和命令错误都不会包含绝对路径、编解码器内部文本或 OS 错误。
 
 ## WASM 插件沙箱
 

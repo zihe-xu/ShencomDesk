@@ -90,3 +90,18 @@ EventBus 支持独立多订阅者、按 `EventKind` 过滤、单调 sequence 以
 ## 文件服务依赖倒置
 
 `application::file_service::FileRepository` 定义读取、索引、监听、缓存失效和关闭能力。`LocalFileRepository` 位于 Infrastructure 层，使用 `std::fs`、`notify` 和 `moka` 实现；Tauri Command 只调用 `FileService`。详见 `docs/file-service.md`。
+
+## 图片压缩依赖倒置
+
+`application::image_service::ImageProcessor` 定义单文件处理端口。`ImageService` 负责请求校验、串行批处理、逐项进度和汇总；`LocalImageProcessor` 位于 Infrastructure 层，使用 `image` 和 `oxipng` 完成读取、编解码及排他写入：
+
+```text
+Image Command
+      ↓
+ImageService ──────> ImageProcessor
+                          ↑
+                 LocalImageProcessor
+                 (image + oxipng)
+```
+
+Command 只负责 `spawn_blocking`、Channel 和稳定错误映射。单文件失败不会终止其余图片，已有输出文件不会被覆盖。
