@@ -139,8 +139,9 @@ apps/desktop/src-tauri/tauri.release.conf.json
 2. Tag 严格等于 `v<version>`。
 3. 基础 Tauri config 未启用 updater artifacts。
 4. release-only config 已启用 updater artifacts。
-5. 公钥 Variable 与私钥 Secret 非空。
-6. `tauri-action` 固定到经审查的完整提交 SHA。
+5. Updater 公钥 Variable 与私钥 Secret 非空。
+6. Apple Developer ID 证书、签名身份、Team ID、Apple ID 与 App 专用密码均已配置。
+7. `tauri-action` 固定到经审查的完整提交 SHA。
 
 通过后按平台串行构建，避免多个 Job 同时读取、删除和上传 `latest.json`：
 
@@ -149,6 +150,8 @@ apps/desktop/src-tauri/tauri.release.conf.json
 - Windows x64：MSI、更新包和 `.sig`。
 - 聚合后的多平台 `latest.json`。
 
+macOS 构建将 Developer ID Application 证书交给 Tauri 完成应用签名和 Apple 公证，并在构建后使用 `codesign --verify`、`xcrun stapler validate` 和 `spctl --assess` 验证签名、公证票据与 Gatekeeper 判定。只有 Tauri Updater `.sig`、但没有 Apple 平台签名的应用会被 Gatekeeper 拒绝，不能作为可发布基线。
+
 Workflow 创建 Draft Release。维护者必须核对版本、平台资产、签名和 `latest.json` 后再手动发布；Draft 不会被 `/releases/latest/` 返回。
 
 ## 首次签名发布清单
@@ -156,12 +159,14 @@ Workflow 创建 Draft Release。维护者必须核对版本、平台资产、签
 1. 安全生成并备份更新密钥。
 2. 配置 `SHENDESK_UPDATER_PUBLIC_KEY`。
 3. 配置 `TAURI_SIGNING_PRIVATE_KEY` 和可选密码。
-4. 同步更新四处应用版本。
-5. 合并版本变更并确认普通 CI 通过。
-6. 创建严格匹配的 `v<version>` Tag。
-7. 等待三个平台签名构建完成。
-8. 检查 Draft Release 包含全部安装包、更新包、`.sig` 与 `latest.json`。
-9. 在测试机器验证升级后再发布 Release。
+4. 配置 `APPLE_SIGNING_IDENTITY` 与 `APPLE_TEAM_ID` Repository Variables。
+5. 配置 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID` 与 `APPLE_PASSWORD` Secrets；`APPLE_CERTIFICATE` 是 Developer ID Application `.p12` 的 Base64 内容，`APPLE_PASSWORD` 是 App 专用密码。
+6. 同步更新四处应用版本。
+7. 合并版本变更并确认普通 CI 通过。
+8. 创建严格匹配的 `v<version>` Tag。
+9. 等待三个平台签名构建和 macOS Gatekeeper 验证完成。
+10. 检查 Draft Release 包含全部安装包、更新包、`.sig` 与 `latest.json`。
+11. 在对应架构测试机器完成全新安装，再发布 Release。
 
 ## 验证
 
