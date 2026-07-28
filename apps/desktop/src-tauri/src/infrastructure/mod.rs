@@ -1,5 +1,6 @@
 //! External adapters. Concrete database, cache, file, logging, network, and system integrations live here.
 
+pub mod auth;
 pub mod database;
 pub mod filesystem;
 pub mod logging;

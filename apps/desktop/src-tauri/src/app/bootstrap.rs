@@ -5,6 +5,7 @@ use tauri::{App, Manager};
 use crate::{
     application::config_service::ConfigService,
     infrastructure::{
+        auth::ShencomAuthBackend,
         database::service::DatabaseService,
         filesystem::LocalFileRepository,
         logging,
@@ -55,11 +56,13 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         error
     })?);
     let update_backend = Arc::new(TauriUpdateBackend::new(app.handle().clone()));
+    let auth_backend = Arc::new(ShencomAuthBackend::test_environment());
     let state = AppState::new(
         Arc::new(LocalFileRepository::default()),
         plugin_repository,
         plugin_runtime,
         update_backend,
+        auth_backend,
     );
     let plugin_report = state.plugin_service().restore_enabled_plugins();
     tracing::info!(
@@ -70,6 +73,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     );
     logging::record_operation("plugin_service.initialize", "success");
     logging::record_operation("update_service.initialize", "success");
+    logging::record_operation("auth_service.initialize", "success");
 
     app.manage(database);
     app.manage(state);

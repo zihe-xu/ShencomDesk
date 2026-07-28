@@ -40,6 +40,16 @@ WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令�
 3. 目标窗口 Capability 的权限清单
 4. IPC 文档与自动化测试
 
+## 认证边界
+
+- WebView 只通过 `login` IPC 提交手机号和密码，不直接访问 Shencom 认证接口。
+- 当前版本固定接入测试环境 `https://tst-crm.shencom.cn`；生产环境切换策略尚未纳入本次实现。
+- Rust 代理固定添加测试环境 `scid`，请求整体超时为 15 秒。
+- 服务端仅以 `errcode = "0000"` 表示成功；其他错误通过稳定的 `auth_failed` IPC 错误返回服务端用户提示。
+- 网络失败、超时、非 200 状态、非 JSON 响应或缺少成功数据统一映射为脱敏的 `auth_unavailable`。
+- 原始密码和 Token 不写入日志；本次不持久化 Access Token 或 Refresh Token，也不实现刷新、撤销与登出。
+- `allow-login` 仅授予标签为 `main` 的窗口。
+
 ## Capability 启用策略
 
 `tauri.conf.json` 显式启用 `default` Capability。这样未来即使 `capabilities/` 目录增加其他文件，也不会被构建自动全部启用。

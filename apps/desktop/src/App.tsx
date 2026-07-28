@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { login } from "@/services/auth";
@@ -10,6 +10,8 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [welcome, setWelcome] = useState("");
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -18,6 +20,11 @@ function App() {
 
     if (!phone.trim() || !password) {
       setError("请输入手机号和密码。");
+      if (!phone.trim()) {
+        phoneInputRef.current?.focus();
+      } else {
+        passwordInputRef.current?.focus();
+      }
       return;
     }
 
@@ -42,16 +49,31 @@ function App() {
             <p className="text-base leading-7 text-muted-foreground">使用您的手机号和密码继续。</p>
           </div>
 
-          <form className="space-y-5" onSubmit={(event) => void handleSubmit(event)}>
+          <form
+            aria-busy={isSubmitting}
+            className="space-y-5"
+            noValidate
+            onSubmit={(event) => void handleSubmit(event)}
+          >
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="phone">手机号</label>
               <input
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={Boolean(error)}
                 autoComplete="tel"
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                autoFocus
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting}
                 id="phone"
                 inputMode="tel"
-                onChange={(event) => setPhone(event.target.value)}
+                onChange={(event) => {
+                  setPhone(event.target.value);
+                  setError("");
+                  setWelcome("");
+                }}
                 placeholder="请输入手机号"
+                ref={phoneInputRef}
+                required
                 type="tel"
                 value={phone}
               />
@@ -60,21 +82,44 @@ function App() {
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="password">密码</label>
               <input
+                aria-describedby={error ? "login-error" : undefined}
+                aria-invalid={Boolean(error)}
                 autoComplete="current-password"
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting}
                 id="password"
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError("");
+                  setWelcome("");
+                }}
                 placeholder="请输入密码"
+                ref={passwordInputRef}
+                required
                 type="password"
                 value={password}
               />
             </div>
 
-            {error && <p aria-live="polite" className="text-sm text-red-600">{error}</p>}
-            {welcome && <p aria-live="polite" className="text-sm text-emerald-700">{welcome}</p>}
+            {error && (
+              <p className="text-sm text-red-600" id="login-error" role="alert">
+                {error}
+              </p>
+            )}
+            {welcome && (
+              <p aria-live="polite" className="text-sm text-emerald-700">
+                {welcome}
+              </p>
+            )}
 
-            <Button className="h-11 w-full" disabled={isSubmitting} size="lg" type="submit">
-              {isSubmitting ? "正在登录…" : "登录"}
+            <Button className="h-11 w-full gap-2" disabled={isSubmitting} size="lg" type="submit">
+              {isSubmitting && (
+                <span
+                  aria-hidden="true"
+                  className="size-4 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground motion-safe:animate-spin"
+                />
+              )}
+              <span>{isSubmitting ? "正在登录…" : "登录"}</span>
             </Button>
           </form>
         </div>

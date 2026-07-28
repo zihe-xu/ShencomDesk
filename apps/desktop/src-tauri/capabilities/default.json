@@ -6,6 +6,7 @@
     "main"
   ],
   "permissions": [
+    "allow-login",
     "allow-health-check",
     "allow-get-config",
     "allow-save-config",

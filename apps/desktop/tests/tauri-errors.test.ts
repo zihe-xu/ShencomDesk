@@ -17,6 +17,22 @@ test("preserves known redacted IPC errors", () => {
   assert.equal(normalized.message, "本地数据服务暂时不可用，请重试。");
 });
 
+test("preserves stable authentication errors", () => {
+  const failed = normalizeIpcError({
+    code: "auth_failed",
+    message: "账号或密码有误",
+  });
+  const unavailable = normalizeIpcError({
+    code: "auth_unavailable",
+    message: "登录服务暂时不可用，请稍后重试。",
+  });
+
+  assert.equal(failed.code, "auth_failed");
+  assert.equal(failed.message, "账号或密码有误");
+  assert.equal(unavailable.code, "auth_unavailable");
+  assert.equal(unavailable.message, "登录服务暂时不可用，请稍后重试。");
+});
+
 test("preserves stable task errors", () => {
   const normalized = normalizeIpcError({
     code: "task_not_found",
