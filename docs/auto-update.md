@@ -113,6 +113,8 @@ pnpm tauri signer generate -- -w ~/.tauri/shendesk.key
 
 普通开发、CI 和合并后构建使用 `tauri.conf.json`，不创建 updater artifact，也不需要签名私钥。
 
+基础配置中的 `plugins.updater.pubkey` 保持为空字符串，仅用于满足 updater 插件启动时的配置反序列化。实际更新公钥不会从该配置读取，而是在发布编译时通过 `SHENDESK_UPDATER_PUBLIC_KEY` 内嵌，并由 `TauriUpdateBackend` 在每次创建 updater 客户端时设置。
+
 签名发布额外叠加：
 
 ```text
