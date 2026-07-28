@@ -11,6 +11,8 @@ pub fn run() {
         .setup(crate::app::bootstrap::initialize)
         .invoke_handler(tauri::generate_handler![
             crate::commands::auth::login,
+            crate::commands::auth::get_auth_state,
+            crate::commands::auth::logout,
             crate::commands::health::health_check,
             crate::commands::config::get_config,
             crate::commands::config::save_config,

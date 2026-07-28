@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::application::{
-    auth_service::{AuthBackend, AuthService},
+    auth_service::{AuthBackend, AuthService, AuthServiceError, AuthSessionStore},
     event_bus::EventBus,
     file_service::{FileRepository, FileService},
     plugin_service::{PluginRepository, PluginRuntime, PluginService},
@@ -31,16 +31,17 @@ impl AppState {
         plugin_runtime: Arc<dyn PluginRuntime>,
         update_backend: Arc<dyn UpdateBackend>,
         auth_backend: Arc<dyn AuthBackend>,
-    ) -> Self {
+        auth_session_store: Arc<dyn AuthSessionStore>,
+    ) -> Result<Self, AuthServiceError> {
         let event_bus = EventBus::default();
         let task_manager = TaskManager::with_events(event_bus.clone());
-        let auth_service = AuthService::new(auth_backend);
+        let auth_service = AuthService::new(auth_backend, auth_session_store, event_bus.clone())?;
         let file_service = FileService::new(file_repository, event_bus.clone());
         let plugin_service =
             PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
         let update_service = UpdateService::new(update_backend, event_bus.clone());
 
-        Self {
+        Ok(Self {
             started_at: Instant::now(),
             event_bus,
             task_manager,
@@ -48,7 +49,7 @@ impl AppState {
             file_service,
             plugin_service,
             update_service,
-        }
+        })
     }
 
     pub fn uptime(&self) -> Duration {
@@ -91,10 +92,14 @@ mod tests {
 
     use crate::{
         application::{
-            auth_service::{AuthBackendResponse, AuthServiceError},
+            auth_service::{AuthBackendResponse, AuthSessionStore},
             update_service::{UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind},
         },
-        domain::{auth::LoginRequest, event::EventKind, update::UpdateInfo},
+        domain::{
+            auth::{AccessToken, LoginRequest},
+            event::EventKind,
+            update::UpdateInfo,
+        },
         infrastructure::{
             filesystem::LocalFileRepository,
             plugins::{LocalPluginRepository, WasmtimePluginRuntime},
@@ -109,6 +114,9 @@ mod tests {
     #[derive(Debug, Default)]
     struct NoopAuthBackend;
 
+    #[derive(Debug, Default)]
+    struct NoopAuthSessionStore;
+
     #[async_trait]
     impl AuthBackend for NoopAuthBackend {
         async fn login(
@@ -118,6 +126,20 @@ mod tests {
             Err(AuthServiceError::unavailable(
                 "not configured for state test",
             ))
+        }
+    }
+
+    impl AuthSessionStore for NoopAuthSessionStore {
+        fn load(&self) -> Result<Option<AccessToken>, AuthServiceError> {
+            Ok(None)
+        }
+
+        fn save(&self, _token: &AccessToken) -> Result<(), AuthServiceError> {
+            Ok(())
+        }
+
+        fn clear(&self) -> Result<(), AuthServiceError> {
+            Ok(())
         }
     }
 
@@ -157,7 +179,9 @@ mod tests {
             Arc::new(WasmtimePluginRuntime::new().expect("plugin runtime should initialize")),
             Arc::new(NoopUpdateBackend),
             Arc::new(NoopAuthBackend),
-        );
+            Arc::new(NoopAuthSessionStore),
+        )
+        .expect("app state should initialize");
         let mut subscriber = state.event_bus().subscribe_to([EventKind::TaskFinished]);
         let created = state
             .task_manager()

@@ -39,6 +39,7 @@ Domain 事件不依赖 Tauri、Tokio、Wasmtime 或具体基础设施，因此�
 - `plugin_executed`
 - `plugin_removed`
 - `user_logged_in`
+- `user_logged_out`
 - `update_available`
 
 每次发布都会生成 envelope：
@@ -128,6 +129,18 @@ update_available { version }
 
 事件只包含目标 SemVer，不包含下载 URL、签名、清单原文或私钥。没有更新时不发布；安装进度是面向发起 WebView 的 IPC Channel，不进入全局 EventBus，避免高频下载块占用广播容量。
 
+## AuthService 集成
+
+认证状态变化通过共享 EventBus 发布：
+
+```text
+user_logged_in { user_id }
+    ↓
+user_logged_out { user_id }
+```
+
+事件只包含用户 ID，不包含手机号、Access Token、Refresh Token 或系统凭据库内容。启动恢复已有会话不会伪造新的登录事件；只有成功登录和显式本地登出会发布事件。
+
 ## 应用生命周期
 
 - 完成共享状态注册后发布 `application_ready`。
@@ -146,4 +159,4 @@ EventBus 是进程内通信设施；应用退出后事件不会保留。插件�
 
 ## 测试
 
-测试覆盖多 subscriber fan-out、类别过滤、lag 检测、有序 sequence、零 subscriber 发布、稳定 wire format、TaskManager 生命周期、插件生命周期事件顺序、更新可用事件，以及 AppState 内核心服务共享同一 EventBus。
+测试覆盖多 subscriber fan-out、类别过滤、lag 检测、有序 sequence、零 subscriber 发布、稳定 wire format、TaskManager 生命周期、插件生命周期事件顺序、认证登录/登出事件、更新可用事件，以及 AppState 内核心服务共享同一 EventBus。
