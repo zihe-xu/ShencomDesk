@@ -50,5 +50,10 @@
   "bundle": {
     "active": true,
     "targets": "all"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": ""
+    }
   }
 }

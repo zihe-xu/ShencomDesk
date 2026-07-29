@@ -117,7 +117,7 @@ macOS Developer ID 签名与 Apple 公证使用：
 
 ## 应用图标
 
-仓库保留可缩放源文件 `apps/desktop/app-icon.svg`。构建 Runner 使用 Tauri CLI 在打包前生成当前平台需要的 `.icns`、`.ico` 与 PNG 图标。
+`apps/desktop/app-icons/` 集中存放品牌源文件 `logo.svg`，以及带平台安全区的 `logo-macos.svg` 与 `logo-windows.svg`。构建 Runner 使用对应平台的矢量源，通过 Tauri CLI 在打包前生成 `.icns`、`.ico` 与 PNG 图标；`src-tauri/icons/icon.png` 则作为开发运行和窗口图标的默认 PNG 资源。
 
 ## 验证
 

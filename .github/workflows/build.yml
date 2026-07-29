@@ -98,9 +98,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate platform application icons
+      - name: Generate macOS application icons
+        if: runner.os == 'macOS'
         working-directory: apps/desktop
-        run: pnpm run tauri -- icon app-icon.svg
+        run: pnpm run tauri icon app-icons/logo-macos.svg
+
+      - name: Generate Windows application icons
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        run: pnpm run tauri icon app-icons/logo-windows.svg
 
       - name: Build Tauri desktop bundles
         id: tauri_build
