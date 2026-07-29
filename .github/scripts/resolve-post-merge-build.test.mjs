@@ -117,6 +117,8 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
 
   assert.match(workflow, /runner:\s+windows-2022/);
   assert.doesNotMatch(workflow, /runner:\s+windows-latest/);
+  assert.match(workflow, /icon app-icons\/logo-macos\.svg/);
+  assert.match(workflow, /icon app-icons\/logo-windows\.svg/);
   assert.match(workflow, /run-tauri-build\.mjs/);
   assert.match(workflow, /Upload failed build diagnostics/);
   assert.match(workflow, /retention-days:\s+7/);

@@ -124,6 +124,8 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
 
   assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
   assert.doesNotMatch(workflow, /pull_request:/);
+  assert.match(workflow, /icon app-icons\/logo-macos\.svg/);
+  assert.match(workflow, /icon app-icons\/logo-windows\.svg/);
   assert.match(workflow, /permissions:\s*\n\s*contents: read/);
   assert.match(
     workflow,
@@ -255,6 +257,7 @@ test("runtime updater boundary remains signed, HTTPS-only, and least-privilege",
     false,
   );
   assert.equal(baseConfig.bundle.createUpdaterArtifacts, undefined);
+  assert.deepEqual(baseConfig.plugins.updater, { pubkey: "" });
   assert.equal(releaseConfig.bundle.createUpdaterArtifacts, true);
   assert.match(
     updaterSource,
