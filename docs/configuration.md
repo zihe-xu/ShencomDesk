@@ -5,7 +5,7 @@
 ```json
 {
   "schemaVersion": 1,
-  "theme": "dark",
+  "theme": "system",
   "language": "zh-CN",
   "autoStart": true
 }
@@ -24,6 +24,8 @@
 5. 旧配置会升级到当前 `schemaVersion`，升级结果会自动回写。
 6. 不支持的主题和空语言值会被归一化。
 7. 配置 JSON 损坏时执行恢复流程，应用不会因为解析错误而停止启动。
+
+`theme` 支持 `system`、`light` 和 `dark`。默认 `system` 会跟随操作系统外观，并在系统主题变化时即时更新。
 
 ## 损坏配置恢复
 

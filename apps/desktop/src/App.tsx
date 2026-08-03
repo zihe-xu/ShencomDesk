@@ -4,7 +4,20 @@ import { Login } from "@/components/Login";
 import { ImageCompression } from "@/components/image-compression/ImageCompression";
 import { Toaster } from "@/components/ui/sonner";
 import { getAuthState, logout, type AuthState } from "@/services/auth";
+import {
+  getConfig,
+  saveConfig,
+  type AppConfig,
+  type ThemePreference,
+} from "@/services/config";
 import { ShenDeskIpcError } from "@/services/tauri";
+
+const DEFAULT_CONFIG: AppConfig = {
+  schemaVersion: 1,
+  theme: "system",
+  language: "zh-CN",
+  autoStart: true,
+};
 
 function displayNameFrom(state: AuthState): string | null {
   if (!state.authenticated || !state.user) {
@@ -18,12 +31,41 @@ function App() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSavingTheme, setIsSavingTheme] = useState(false);
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const isDark =
+        config.theme === "dark" ||
+        (config.theme === "system" && mediaQuery.matches);
+      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    };
+
+    applyTheme();
+    mediaQuery.addEventListener("change", applyTheme);
+    return () => mediaQuery.removeEventListener("change", applyTheme);
+  }, [config.theme]);
 
   useEffect(() => {
     let cancelled = false;
 
-    void getAuthState()
+    const restoreConfig = getConfig()
+      .then((storedConfig) => {
+        if (!cancelled) {
+          setConfig(storedConfig);
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (!cancelled) {
+          setError(formatConfigError(requestError));
+        }
+      });
+
+    const restoreAuth = getAuthState()
       .then((state) => {
         if (!cancelled) {
           setDisplayName(displayNameFrom(state));
@@ -33,12 +75,13 @@ function App() {
         if (!cancelled) {
           setError(formatAuthError(requestError));
         }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsRestoring(false);
-        }
       });
+
+    void Promise.all([restoreConfig, restoreAuth]).finally(() => {
+      if (!cancelled) {
+        setIsRestoring(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -55,6 +98,23 @@ function App() {
       setError(formatAuthError(requestError));
     } finally {
       setIsLoggingOut(false);
+    }
+  };
+
+  const handleThemeChange = async (theme: ThemePreference) => {
+    const previousConfig = config;
+    const nextConfig = { ...config, theme };
+    setError("");
+    setConfig(nextConfig);
+    setIsSavingTheme(true);
+
+    try {
+      setConfig(await saveConfig(nextConfig));
+    } catch (requestError: unknown) {
+      setConfig(previousConfig);
+      setError(formatConfigError(requestError));
+    } finally {
+      setIsSavingTheme(false);
     }
   };
 
@@ -85,7 +145,10 @@ function App() {
           displayName={displayName}
           error={error}
           isLoggingOut={isLoggingOut}
+          isSavingTheme={isSavingTheme}
           onLogout={() => void handleLogout()}
+          onThemeChange={(theme) => void handleThemeChange(theme)}
+          theme={config.theme}
         />
       ) : (
         <Login onSuccess={setDisplayName} />
@@ -93,6 +156,14 @@ function App() {
       <Toaster />
     </>
   );
+}
+
+function formatConfigError(error: unknown): string {
+  if (error instanceof ShenDeskIpcError) {
+    return error.message;
+  }
+
+  return "主题设置操作失败，请重试。";
 }
 
 function formatAuthError(error: unknown): string {
