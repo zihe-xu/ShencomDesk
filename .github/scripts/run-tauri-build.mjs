@@ -7,13 +7,13 @@ export function resolveBuildProcess(platform = process.platform, env = process.e
   if (platform === "win32") {
     return {
       command: env.ComSpec?.trim() || env.COMSPEC?.trim() || "cmd.exe",
-      args: ["/d", "/s", "/c", "pnpm run tauri -- build"],
+      args: ["/d", "/s", "/c", "pnpm run tauri build"],
     };
   }
 
   return {
     command: "pnpm",
-    args: ["run", "tauri", "--", "build"],
+    args: ["run", "tauri", "build"],
   };
 }
 
