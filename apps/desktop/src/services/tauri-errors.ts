@@ -1,6 +1,7 @@
 export const IPC_ERROR_CODES = [
   "auth_failed",
   "auth_unavailable",
+  "auth_storage_unavailable",
   "database_unavailable",
   "config_load_failed",
   "config_save_failed",

@@ -22,6 +22,7 @@ pub enum AuthServiceErrorKind {
     Validation,
     Rejected,
     Unavailable,
+    Storage,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,10 @@ impl AuthServiceError {
 
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(AuthServiceErrorKind::Unavailable, message)
+    }
+
+    pub fn storage(message: impl Into<String>) -> Self {
+        Self::new(AuthServiceErrorKind::Storage, message)
     }
 
     pub fn kind(&self) -> AuthServiceErrorKind {
@@ -262,19 +267,24 @@ mod tests {
         session: Mutex<Option<AccessToken>>,
         clear_count: Mutex<u32>,
         load_error: bool,
+        save_error: bool,
         clear_error: bool,
     }
 
     impl AuthSessionStore for RecordingStore {
         fn load(&self) -> Result<Option<AccessToken>, AuthServiceError> {
             if self.load_error {
-                return Err(AuthServiceError::unavailable("session store unavailable"));
+                return Err(AuthServiceError::storage("session store unavailable"));
             }
 
             Ok(self.session.lock().expect("session lock").clone())
         }
 
         fn save(&self, token: &AccessToken) -> Result<(), AuthServiceError> {
+            if self.save_error {
+                return Err(AuthServiceError::storage("session store unavailable"));
+            }
+
             *self.session.lock().expect("session lock") = Some(token.clone());
             Ok(())
         }
@@ -282,7 +292,7 @@ mod tests {
         fn clear(&self) -> Result<(), AuthServiceError> {
             *self.clear_count.lock().expect("clear count lock") += 1;
             if self.clear_error {
-                return Err(AuthServiceError::unavailable("session store unavailable"));
+                return Err(AuthServiceError::storage("session store unavailable"));
             }
 
             *self.session.lock().expect("session lock") = None;
@@ -348,6 +358,7 @@ mod tests {
             session: Mutex::new(initial_session),
             clear_count: Mutex::new(0),
             load_error: false,
+            save_error: false,
             clear_error: false,
         });
         let events = EventBus::new(8);
@@ -447,6 +458,36 @@ mod tests {
     }
 
     #[test]
+    fn reports_session_storage_failures_separately_from_login_service_failures() {
+        tauri::async_runtime::block_on(async {
+            let backend = Arc::new(RecordingBackend {
+                response: response(200, SUCCESS_CODE, "", true),
+                requests: Mutex::new(Vec::new()),
+            });
+            let store = Arc::new(RecordingStore {
+                session: Mutex::new(None),
+                clear_count: Mutex::new(0),
+                load_error: false,
+                save_error: true,
+                clear_error: false,
+            });
+            let service = AuthService::new(backend, store, EventBus::new(8))
+                .expect("auth service should initialize");
+
+            let error = service
+                .login(request())
+                .await
+                .expect_err("session storage failure should fail login");
+
+            assert_eq!(error.kind(), AuthServiceErrorKind::Storage);
+            assert_eq!(
+                service.state().expect("state should load"),
+                AuthState::signed_out()
+            );
+        });
+    }
+
+    #[test]
     fn restores_a_non_expired_session_without_exposing_tokens() {
         let (service, _, _, _) = service(
             response(200, SUCCESS_CODE, "", true),
@@ -484,6 +525,7 @@ mod tests {
             session: Mutex::new(None),
             clear_count: Mutex::new(0),
             load_error: true,
+            save_error: false,
             clear_error: false,
         });
 
@@ -506,6 +548,7 @@ mod tests {
             session: Mutex::new(Some(access_token(4_102_444_800))),
             clear_count: Mutex::new(0),
             load_error: false,
+            save_error: false,
             clear_error: true,
         });
         let service = AuthService::new(backend, store.clone(), EventBus::new(8))

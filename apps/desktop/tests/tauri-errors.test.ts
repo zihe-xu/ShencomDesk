@@ -26,11 +26,20 @@ test("preserves stable authentication errors", () => {
     code: "auth_unavailable",
     message: "登录服务暂时不可用，请稍后重试。",
   });
+  const storageUnavailable = normalizeIpcError({
+    code: "auth_storage_unavailable",
+    message: "无法安全保存登录信息，请检查系统凭据库状态或权限后重试。",
+  });
 
   assert.equal(failed.code, "auth_failed");
   assert.equal(failed.message, "账号或密码有误");
   assert.equal(unavailable.code, "auth_unavailable");
   assert.equal(unavailable.message, "登录服务暂时不可用，请稍后重试。");
+  assert.equal(storageUnavailable.code, "auth_storage_unavailable");
+  assert.equal(
+    storageUnavailable.message,
+    "无法安全保存登录信息，请检查系统凭据库状态或权限后重试。",
+  );
 });
 
 test("preserves stable task errors", () => {
