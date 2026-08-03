@@ -1,13 +1,14 @@
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
+use tempfile::Builder as TempFileBuilder;
 use wasmtime::{Config, Engine, Instance, Module, Store, StoreLimits, StoreLimitsBuilder};
 
 use crate::{
@@ -24,6 +25,8 @@ use crate::{
 };
 
 const STATE_FILE_NAME: &str = "state.json";
+const STATE_TEMP_FILE_PREFIX: &str = ".state-";
+const STATE_TEMP_FILE_SUFFIX: &str = ".tmp";
 const MAX_PLUGIN_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PLUGIN_TABLE_ELEMENTS: usize = 10_000;
 const MAX_PLUGIN_FUEL_PER_CALL: u64 = 10_000_000;
@@ -246,7 +249,7 @@ impl LocalPluginRepository {
             installed_at_unix_ms: snapshot.installed_at_unix_ms,
             updated_at_unix_ms: snapshot.updated_at_unix_ms,
         };
-        write_json(&self.plugin_dir(plugin_id).join(STATE_FILE_NAME), &state)
+        write_json_atomically(&self.plugin_dir(plugin_id).join(STATE_FILE_NAME), &state)
     }
 }
 
@@ -373,7 +376,7 @@ impl PluginRepository for LocalPluginRepository {
         })?;
         let updated = PluginSnapshot {
             status,
-            updated_at_unix_ms: unix_time_ms(),
+            updated_at_unix_ms: next_updated_at(&current, unix_time_ms()),
             ..current
         };
         self.write_state(plugin_id, &updated)?;
@@ -405,6 +408,9 @@ fn load_installed_plugins(root: &Path) -> BTreeMap<PluginId, PluginSnapshot> {
         };
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             continue;
+        }
+        if let Err(error) = cleanup_state_temp_files(&path) {
+            tracing::warn!(error = %error, "failed to clean plugin state temporary files");
         }
         match snapshot_from_disk(&path) {
             Ok(snapshot) => {
@@ -508,6 +514,74 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<(), PluginServiceEr
         )
     })?;
     fs::write(path, bytes).map_err(|error| io_error("write plugin data", error))
+}
+
+fn write_json_atomically(path: &Path, value: &impl Serialize) -> Result<(), PluginServiceError> {
+    let parent = path.parent().ok_or_else(|| {
+        PluginServiceError::new(
+            PluginServiceErrorKind::Io,
+            "plugin state path has no parent directory",
+        )
+    })?;
+    let bytes = serde_json::to_vec_pretty(value).map_err(|error| {
+        PluginServiceError::new(
+            PluginServiceErrorKind::Io,
+            format!("serialize plugin data: {error}"),
+        )
+    })?;
+    let mut temporary = TempFileBuilder::new()
+        .prefix(STATE_TEMP_FILE_PREFIX)
+        .suffix(STATE_TEMP_FILE_SUFFIX)
+        .tempfile_in(parent)
+        .map_err(|error| io_error("create plugin state temporary file", error))?;
+    temporary
+        .write_all(&bytes)
+        .and_then(|_| temporary.flush())
+        .and_then(|_| temporary.as_file().sync_all())
+        .map_err(|error| io_error("sync plugin state temporary file", error))?;
+    temporary
+        .persist(path)
+        .map_err(|error| io_error("replace plugin state", error.error))?;
+    if let Err(error) = sync_directory(parent) {
+        tracing::warn!(error = %error, "failed to sync plugin state directory after replacement");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), PluginServiceError> {
+    File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| io_error("sync plugin state directory", error))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), PluginServiceError> {
+    Ok(())
+}
+
+fn cleanup_state_temp_files(plugin_dir: &Path) -> Result<(), PluginServiceError> {
+    let entries = fs::read_dir(plugin_dir)
+        .map_err(|error| io_error("read plugin directory for temporary state cleanup", error))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| io_error("read plugin directory entry", error))?;
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        if file_name.starts_with(STATE_TEMP_FILE_PREFIX)
+            && file_name.ends_with(STATE_TEMP_FILE_SUFFIX)
+        {
+            fs::remove_file(entry.path())
+                .map_err(|error| io_error("remove plugin state temporary file", error))?;
+        }
+    }
+    Ok(())
+}
+
+fn next_updated_at(snapshot: &PluginSnapshot, now: u64) -> u64 {
+    now.max(snapshot.installed_at_unix_ms)
+        .max(snapshot.updated_at_unix_ms)
 }
 
 fn io_error(operation: &str, error: std::io::Error) -> PluginServiceError {
@@ -683,6 +757,102 @@ mod tests {
         assert!(reloaded
             .remove(&snapshot.manifest.id)
             .expect("remove should work"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn interrupted_state_write_preserves_the_last_valid_state() {
+        let root = unique_temp_dir("interrupted-state");
+        let repository = LocalPluginRepository::new(&root).expect("repository should initialize");
+        let snapshot = repository
+            .install(PluginPackage {
+                manifest: manifest(),
+                module: b"test-module".to_vec(),
+            })
+            .expect("plugin should install");
+        repository
+            .set_status(&snapshot.manifest.id, PluginStatus::Enabled)
+            .expect("enabled state should persist");
+        let plugin_dir = root.join(snapshot.manifest.id.as_str());
+        let state_path = plugin_dir.join(STATE_FILE_NAME);
+        let valid_state = fs::read(&state_path).expect("valid state should be readable");
+
+        fs::write(plugin_dir.join(".state-interrupted.tmp"), b"{")
+            .expect("interrupted temporary state should be created");
+
+        assert_eq!(
+            fs::read(&state_path).expect("last valid state should remain readable"),
+            valid_state
+        );
+        assert_eq!(
+            snapshot_from_disk(&plugin_dir)
+                .expect("last valid state should still load")
+                .status,
+            PluginStatus::Enabled
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn repository_cleans_leftover_state_temp_files_on_startup() {
+        let root = unique_temp_dir("state-cleanup");
+        let repository = LocalPluginRepository::new(&root).expect("repository should initialize");
+        let snapshot = repository
+            .install(PluginPackage {
+                manifest: manifest(),
+                module: b"test-module".to_vec(),
+            })
+            .expect("plugin should install");
+        let leftover = root
+            .join(snapshot.manifest.id.as_str())
+            .join(".state-leftover.tmp");
+        fs::write(&leftover, b"partial").expect("leftover state should be created");
+        drop(repository);
+
+        let reloaded = LocalPluginRepository::new(&root).expect("repository should reload");
+
+        assert!(!leftover.exists());
+        assert!(reloaded
+            .get(&snapshot.manifest.id)
+            .expect("get should work")
+            .is_some());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn updated_timestamp_remains_monotonic_when_the_clock_moves_backwards() {
+        let root = unique_temp_dir("clock-rollback");
+        let repository = LocalPluginRepository::new(&root).expect("repository should initialize");
+        let snapshot = repository
+            .install(PluginPackage {
+                manifest: manifest(),
+                module: b"test-module".to_vec(),
+            })
+            .expect("plugin should install");
+        let future_update = unix_time_ms().saturating_add(60_000);
+        repository
+            .records
+            .lock()
+            .expect("records lock")
+            .get_mut(&snapshot.manifest.id)
+            .expect("plugin should exist")
+            .updated_at_unix_ms = future_update;
+
+        let updated = repository
+            .set_status(&snapshot.manifest.id, PluginStatus::Enabled)
+            .expect("status should persist despite clock rollback");
+
+        assert_eq!(updated.updated_at_unix_ms, future_update);
+        drop(repository);
+        assert_eq!(
+            LocalPluginRepository::new(&root)
+                .expect("repository should reload")
+                .get(&snapshot.manifest.id)
+                .expect("get should work")
+                .expect("plugin should remain installed")
+                .updated_at_unix_ms,
+            future_update
+        );
         let _ = fs::remove_dir_all(root);
     }
 
