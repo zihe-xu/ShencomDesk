@@ -1,6 +1,6 @@
 [package]
 name = "shendesk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shencom Desktop Platform"
 authors = ["Shencom"]
 edition = "2021"
