@@ -8,6 +8,10 @@ import {
   FolderOpen,
   ImageIcon,
   MinusCircle,
+  Monitor,
+  Moon,
+  Settings,
+  Sun,
   Trash2,
   UploadCloud,
 } from "lucide-react";
@@ -29,6 +33,7 @@ import {
   type CompressionProgress,
   type CompressionStatus,
 } from "@/services/image";
+import type { ThemePreference } from "@/services/config";
 import { ShenDeskIpcError } from "@/services/tauri";
 
 type FileStatus = "pending" | CompressionStatus;
@@ -46,8 +51,21 @@ interface ImageCompressionProps {
   displayName: string;
   error?: string;
   isLoggingOut?: boolean;
+  isSavingTheme?: boolean;
   onLogout?: () => void;
+  onThemeChange?: (theme: ThemePreference) => void;
+  theme?: ThemePreference;
 }
+
+const THEME_OPTIONS = [
+  { value: "system", label: "跟随系统", icon: Monitor },
+  { value: "light", label: "亮色", icon: Sun },
+  { value: "dark", label: "暗色", icon: Moon },
+] satisfies Array<{
+  value: ThemePreference;
+  label: string;
+  icon: typeof Monitor;
+}>;
 
 const IMAGE_FILTERS = [
   {
@@ -60,13 +78,17 @@ export function ImageCompression({
   displayName,
   error,
   isLoggingOut = false,
+  isSavingTheme = false,
   onLogout,
+  onThemeChange,
+  theme = "system",
 }: ImageCompressionProps) {
   const [items, setItems] = useState<SelectedImage[]>([]);
   const [quality, setQuality] = useState(75);
   const [outputDir, setOutputDir] = useState("");
   const [isCompressing, setIsCompressing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [result, setResult] = useState<CompressImagesResult | null>(null);
 
   const addFiles = useCallback(
@@ -259,24 +281,76 @@ export function ImageCompression({
               欢迎回来，
               <span className="font-medium text-foreground">{displayName}</span>
             </p>
-            {onLogout && (
+            <div className="flex gap-2">
               <Button
-                disabled={isLoggingOut || isCompressing}
-                onClick={onLogout}
+                aria-expanded={isSettingsOpen}
+                aria-controls="appearance-settings"
+                className="gap-2"
+                onClick={() => setIsSettingsOpen((open) => !open)}
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                {isLoggingOut ? "正在退出…" : "退出登录"}
+                <Settings aria-hidden="true" className="size-4" />
+                设置
               </Button>
-            )}
+              {onLogout && (
+                <Button
+                  disabled={isLoggingOut || isCompressing}
+                  onClick={onLogout}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {isLoggingOut ? "正在退出…" : "退出登录"}
+                </Button>
+              )}
+            </div>
             {error && (
-              <p className="text-sm text-red-600" role="alert">
+              <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                 {error}
               </p>
             )}
           </div>
         </header>
+
+        {isSettingsOpen && (
+          <Card id="appearance-settings">
+            <CardHeader>
+              <CardTitle>外观设置</CardTitle>
+              <CardDescription>
+                选择应用主题。跟随系统时会自动响应系统外观变化。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                aria-label="主题"
+                className="grid gap-3 sm:grid-cols-3"
+                role="radiogroup"
+              >
+                {THEME_OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const selected = theme === option.value;
+                  return (
+                    <Button
+                      aria-checked={selected}
+                      className="min-h-11 gap-2"
+                      disabled={isSavingTheme}
+                      key={option.value}
+                      onClick={() => onThemeChange?.(option.value)}
+                      role="radio"
+                      size="lg"
+                      variant={selected ? "default" : "outline"}
+                    >
+                      <Icon aria-hidden="true" className="size-4" />
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="p-6">
@@ -351,7 +425,9 @@ export function ImageCompression({
                           {statusText(item)}
                         </p>
                         {item.error && (
-                          <p className="mt-1 text-xs text-red-600">{item.error}</p>
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                            {item.error}
+                          </p>
                         )}
                       </div>
                       <Button
@@ -564,7 +640,7 @@ function StatusIcon({ status }: { status: FileStatus }) {
       return (
         <AlertCircle
           aria-label="处理失败"
-          className={`${className} text-red-600`}
+          className={`${className} text-red-600 dark:text-red-400`}
         />
       );
     default:

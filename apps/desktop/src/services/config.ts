@@ -1,20 +1,19 @@
 import { invokeCommand } from "./tauri";
 
-export type ThemePreference = "dark" | "light" | "system";
+import {
+  getConfigWithInvoker,
+  saveConfigWithInvoker,
+  type AppConfig,
+} from "./config-core";
 
-export interface AppConfig {
-  schemaVersion: number;
-  theme: ThemePreference;
-  language: string;
-  autoStart: boolean;
-}
+export type { AppConfig, ThemePreference } from "./config-core";
 
 export function getConfig(): Promise<AppConfig> {
-  return invokeCommand<AppConfig>("get_config");
+  return getConfigWithInvoker(invokeCommand);
 }
 
 export function saveConfig(config: AppConfig): Promise<AppConfig> {
-  return invokeCommand<AppConfig>("save_config", { config });
+  return saveConfigWithInvoker(invokeCommand, config);
 }
 
 export function resetConfig(): Promise<AppConfig> {

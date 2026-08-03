@@ -161,7 +161,11 @@ export function Login({ onSuccess }: LoginProps) {
             </div>
 
             {error && (
-              <p className="text-sm text-red-600" id="login-error" role="alert">
+              <p
+                className="text-sm text-red-600 dark:text-red-400"
+                id="login-error"
+                role="alert"
+              >
                 {error}
               </p>
             )}

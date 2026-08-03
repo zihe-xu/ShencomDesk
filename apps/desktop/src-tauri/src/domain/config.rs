@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 pub const CURRENT_CONFIG_SCHEMA_VERSION: u32 = 1;
 
 fn default_theme() -> String {
-    "dark".to_owned()
+    "system".to_owned()
 }
 
 fn default_language() -> String {
@@ -87,5 +87,10 @@ mod tests {
         .migrate();
 
         assert_eq!(migrated, AppConfig::default());
+    }
+
+    #[test]
+    fn follows_the_system_theme_by_default() {
+        assert_eq!(AppConfig::default().theme, "system");
     }
 }
