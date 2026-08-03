@@ -51,6 +51,7 @@ WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令�
 - Rust 代理固定添加测试环境 `scid`，请求整体超时为 15 秒。
 - 服务端仅以 `errcode = "0000"` 表示成功；其他错误通过稳定的 `auth_failed` IPC 错误返回服务端用户提示。
 - 网络失败、超时、非 200 状态、非 JSON 响应或缺少成功数据统一映射为脱敏的 `auth_unavailable`。
+- 系统凭据库读取、写入或清理失败统一映射为脱敏的 `auth_storage_unavailable`，避免把本地 Keychain / Credential Manager 故障误报为认证服务不可用。
 - Access Token、Refresh Token 和原始密码不写入日志，也不返回 WebView。IPC `AuthState` 只包含登录状态、用户资料和过期时间。
 - 完整 Token 会话以带版本号的 JSON 写入操作系统凭据库：macOS 使用 Keychain，Windows 使用 Credential Manager。服务名固定为 `com.shencom.shendesk.auth`；当前测试环境账户名为 `test-session-v1`，避免与其他环境或不兼容的存储格式共用条目。
 - 应用启动时从系统凭据库恢复未过期会话；过期、损坏或版本不兼容的会话会被删除。凭据库不可用或恢复失败时应用仍以未登录状态启动。`logout` 仅执行本地会话清除，因为服务端撤销/登出接口尚未确认。

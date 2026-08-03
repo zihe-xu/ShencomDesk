@@ -88,7 +88,7 @@ impl std::fmt::Debug for KeyringAuthSessionStore {
 impl KeyringAuthSessionStore {
     pub fn new() -> Result<Self, AuthServiceError> {
         let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).map_err(|error| {
-            AuthServiceError::unavailable(format!(
+            AuthServiceError::storage(format!(
                 "system credential store could not be initialized: {error}"
             ))
         })?;
@@ -110,7 +110,7 @@ impl AuthSessionStore for KeyringAuthSessionStore {
             Ok(serialized) => serialized,
             Err(keyring::Error::NoEntry) => return Ok(None),
             Err(error) => {
-                return Err(AuthServiceError::unavailable(format!(
+                return Err(AuthServiceError::storage(format!(
                     "stored authentication session could not be read: {error}"
                 )))
             }
@@ -140,7 +140,7 @@ impl AuthSessionStore for KeyringAuthSessionStore {
         };
         let serialized = encode_stored_session(token)?;
         entry.set_password(&serialized).map_err(|error| {
-            AuthServiceError::unavailable(format!(
+            AuthServiceError::storage(format!(
                 "authentication session could not be stored: {error}"
             ))
         })
@@ -152,7 +152,7 @@ impl AuthSessionStore for KeyringAuthSessionStore {
         };
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(AuthServiceError::unavailable(format!(
+            Err(error) => Err(AuthServiceError::storage(format!(
                 "stored authentication session could not be removed: {error}"
             ))),
         }
@@ -165,7 +165,7 @@ fn encode_stored_session(token: &AccessToken) -> Result<String, AuthServiceError
         token: token.clone(),
     })
     .map_err(|error| {
-        AuthServiceError::unavailable(format!(
+        AuthServiceError::storage(format!(
             "authentication session could not be encoded: {error}"
         ))
     })
@@ -173,12 +173,12 @@ fn encode_stored_session(token: &AccessToken) -> Result<String, AuthServiceError
 
 fn decode_stored_session(serialized: &str) -> Result<AccessToken, AuthServiceError> {
     let stored: StoredAuthSession = serde_json::from_str(serialized).map_err(|error| {
-        AuthServiceError::unavailable(format!(
+        AuthServiceError::storage(format!(
             "stored authentication session could not be decoded: {error}"
         ))
     })?;
     if stored.version != AUTH_SESSION_VERSION {
-        return Err(AuthServiceError::unavailable(format!(
+        return Err(AuthServiceError::storage(format!(
             "stored authentication session version {} is not supported",
             stored.version
         )));

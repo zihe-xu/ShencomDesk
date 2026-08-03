@@ -16,6 +16,7 @@ use crate::{
 pub enum IpcErrorCode {
     AuthFailed,
     AuthUnavailable,
+    AuthStorageUnavailable,
     DatabaseUnavailable,
     ConfigLoadFailed,
     ConfigSaveFailed,
@@ -64,6 +65,7 @@ impl IpcError {
             AuthServiceErrorKind::Validation => Self::validation(),
             AuthServiceErrorKind::Rejected => Self::auth_failed(error.to_string()),
             AuthServiceErrorKind::Unavailable => Self::auth_unavailable(),
+            AuthServiceErrorKind::Storage => Self::auth_storage_unavailable(),
         }
     }
 
@@ -75,6 +77,13 @@ impl IpcError {
         Self::new(
             IpcErrorCode::AuthUnavailable,
             "登录服务暂时不可用，请稍后重试。",
+        )
+    }
+
+    pub fn auth_storage_unavailable() -> Self {
+        Self::new(
+            IpcErrorCode::AuthStorageUnavailable,
+            "无法安全保存登录信息，请检查系统凭据库状态或权限后重试。",
         )
     }
 
@@ -396,5 +405,21 @@ mod tests {
         assert!(!serialized.contains("private.example"));
         assert!(!serialized.contains("SECRET"));
         assert_eq!(payload.message, "登录服务暂时不可用，请稍后重试。");
+    }
+
+    #[test]
+    fn maps_auth_storage_errors_without_reporting_a_service_outage() {
+        let internal = AuthServiceError::storage(
+            "authentication session could not be stored: User interaction is not allowed",
+        );
+        let payload = IpcError::for_auth_operation(&internal);
+        let serialized = serde_json::to_string(&payload).expect("error should serialize");
+
+        assert_eq!(payload.code, IpcErrorCode::AuthStorageUnavailable);
+        assert!(!serialized.contains("User interaction"));
+        assert_eq!(
+            payload.message,
+            "无法安全保存登录信息，请检查系统凭据库状态或权限后重试。"
+        );
     }
 }

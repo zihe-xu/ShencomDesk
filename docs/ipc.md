@@ -68,6 +68,7 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 |---|---|
 | `auth_failed` | 认证服务拒绝手机号或密码，消息来自服务端 `errmsg` |
 | `auth_unavailable` | 认证服务不可达、超时或返回无法解析的数据 |
+| `auth_storage_unavailable` | 系统凭据库不可用，登录会话无法安全保存 |
 | `database_unavailable` | SQLite 或本地数据服务不可用 |
 | `config_load_failed` | 配置读取或恢复失败 |
 | `config_save_failed` | 配置保存失败 |
@@ -103,7 +104,7 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 
 ## 信息脱敏
 
-Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和更新后端诊断写入本地日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与面向用户的消息；其中 `auth_failed` 使用认证服务的 `errmsg`，认证服务不可达或响应无法解析时则使用固定脱敏消息。错误载荷不包含：
+Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和更新后端诊断写入本地日志。发送给 WebView 的 `IpcError` 只包含稳定错误码与面向用户的消息；其中 `auth_failed` 使用认证服务的 `errmsg`，认证服务不可达、响应无法解析或系统凭据库失败时则使用对应的固定脱敏消息。错误载荷不包含：
 
 - 手机号、密码、Access Token 或 Refresh Token；
 - 本地文件路径；
