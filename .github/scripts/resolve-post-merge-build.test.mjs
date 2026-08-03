@@ -151,14 +151,14 @@ test("Windows build invokes pnpm through cmd.exe", () => {
 
   assert.deepEqual(command, {
     command: "C:\\Windows\\System32\\cmd.exe",
-    args: ["/d", "/s", "/c", "pnpm run tauri -- build"],
+    args: ["/d", "/s", "/c", "pnpm run tauri build"],
   });
 });
 
 test("non-Windows build invokes pnpm directly", () => {
   assert.deepEqual(resolveBuildProcess("linux", {}), {
     command: "pnpm",
-    args: ["run", "tauri", "--", "build"],
+    args: ["run", "tauri", "build"],
   });
 });
 
