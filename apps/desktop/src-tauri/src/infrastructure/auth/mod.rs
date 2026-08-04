@@ -8,16 +8,72 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::auth_service::{
         AuthBackend, AuthBackendResponse, AuthServiceError, AuthSessionStore,
+        RefreshBackendResponse,
     },
-    domain::auth::{AccessToken, LoginRequest, LoginResponse},
+    domain::auth::{
+        AccessToken, LoginRequest, LoginResponse, RefreshTokenRequest, RefreshTokenResponse,
+    },
 };
 
-const LOGIN_URL: &str = "https://tst-crm.shencom.cn/service-uaa/user/login";
-const SCID: &str = "sca15516911b95f35b";
+const AUTH_ENVIRONMENT_VARIABLE: &str = "SHENDESK_AUTH_ENVIRONMENT";
+const TEST_BASE_URL: &str = "https://tst-crm.shencom.cn";
+const TEST_SCID: &str = "sca15516911b95f35b";
+const PRODUCTION_BASE_URL: &str = "https://crm.shencom.cn";
+const PRODUCTION_SCID: &str = "sc8820513B9B1903E4";
+const LOGIN_PATH: &str = "/service-uaa/user/login";
+const REFRESH_PATH: &str = "/service-uaa/auth/token-user/refresh";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(15);
 const KEYRING_SERVICE: &str = "com.shencom.shendesk.auth";
-const KEYRING_ACCOUNT: &str = "test-session-v1";
 const AUTH_SESSION_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthEnvironment {
+    Test,
+    Production,
+}
+
+impl AuthEnvironment {
+    pub fn from_process_environment() -> Result<Self, AuthServiceError> {
+        match std::env::var(AUTH_ENVIRONMENT_VARIABLE) {
+            Ok(value) => Self::parse(&value),
+            Err(std::env::VarError::NotPresent) => Ok(Self::Test),
+            Err(error) => Err(AuthServiceError::unavailable(format!(
+                "{AUTH_ENVIRONMENT_VARIABLE} could not be read: {error}"
+            ))),
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, AuthServiceError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "test" => Ok(Self::Test),
+            "production" => Ok(Self::Production),
+            value => Err(AuthServiceError::unavailable(format!(
+                "unsupported {AUTH_ENVIRONMENT_VARIABLE} value: {value}"
+            ))),
+        }
+    }
+
+    fn base_url(self) -> &'static str {
+        match self {
+            Self::Test => TEST_BASE_URL,
+            Self::Production => PRODUCTION_BASE_URL,
+        }
+    }
+
+    fn scid(self) -> &'static str {
+        match self {
+            Self::Test => TEST_SCID,
+            Self::Production => PRODUCTION_SCID,
+        }
+    }
+
+    fn keyring_account(self) -> &'static str {
+        match self {
+            Self::Test => "test-session-v1",
+            Self::Production => "production-session-v1",
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredAuthSession {
@@ -28,25 +84,42 @@ struct StoredAuthSession {
 #[derive(Debug, Clone)]
 pub struct ShencomAuthBackend {
     client: Client,
+    environment: AuthEnvironment,
 }
 
 impl ShencomAuthBackend {
-    pub fn test_environment() -> Self {
+    pub fn new(environment: AuthEnvironment) -> Self {
         Self {
             client: Client::new(),
+            environment,
         }
     }
 
     fn build_login_request(&self, request: &LoginRequest) -> Result<Request, AuthServiceError> {
         self.client
-            .post(LOGIN_URL)
-            .header("scid", SCID)
+            .post(format!("{}{LOGIN_PATH}", self.environment.base_url()))
+            .header("scid", self.environment.scid())
             .header(ACCEPT, "*/*")
             .timeout(LOGIN_TIMEOUT)
             .json(request)
             .build()
             .map_err(|error| {
                 AuthServiceError::unavailable(format!("failed to build login request: {error}"))
+            })
+    }
+
+    fn build_refresh_request(&self, refresh_token: &str) -> Result<Request, AuthServiceError> {
+        self.client
+            .post(format!("{}{REFRESH_PATH}", self.environment.base_url()))
+            .header("scid", self.environment.scid())
+            .header(ACCEPT, "*/*")
+            .timeout(LOGIN_TIMEOUT)
+            .json(&RefreshTokenRequest {
+                refresh_token: refresh_token.to_owned(),
+            })
+            .build()
+            .map_err(|error| {
+                AuthServiceError::unavailable(format!("failed to build refresh request: {error}"))
             })
     }
 }
@@ -71,6 +144,33 @@ impl AuthBackend for ShencomAuthBackend {
             payload,
         })
     }
+
+    async fn refresh(
+        &self,
+        refresh_token: &str,
+    ) -> Result<RefreshBackendResponse, AuthServiceError> {
+        let response = self
+            .client
+            .execute(self.build_refresh_request(refresh_token)?)
+            .await
+            .map_err(|error| {
+                AuthServiceError::unavailable(format!("refresh request failed: {error}"))
+            })?;
+        let http_status = response.status().as_u16();
+        let payload = response
+            .json::<RefreshTokenResponse>()
+            .await
+            .map_err(|error| {
+                AuthServiceError::unavailable(format!(
+                    "refresh response could not be decoded: {error}"
+                ))
+            })?;
+
+        Ok(RefreshBackendResponse {
+            http_status,
+            payload,
+        })
+    }
 }
 
 pub struct KeyringAuthSessionStore {
@@ -86,12 +186,13 @@ impl std::fmt::Debug for KeyringAuthSessionStore {
 }
 
 impl KeyringAuthSessionStore {
-    pub fn new() -> Result<Self, AuthServiceError> {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).map_err(|error| {
-            AuthServiceError::storage(format!(
-                "system credential store could not be initialized: {error}"
-            ))
-        })?;
+    pub fn new(environment: AuthEnvironment) -> Result<Self, AuthServiceError> {
+        let entry =
+            Entry::new(KEYRING_SERVICE, environment.keyring_account()).map_err(|error| {
+                AuthServiceError::storage(format!(
+                    "system credential store could not be initialized: {error}"
+                ))
+            })?;
 
         Ok(Self { entry: Some(entry) })
     }
@@ -213,8 +314,8 @@ mod tests {
     }
 
     #[test]
-    fn builds_the_confirmed_test_environment_request() {
-        let backend = ShencomAuthBackend::test_environment();
+    fn builds_the_confirmed_test_environment_login_request() {
+        let backend = ShencomAuthBackend::new(AuthEnvironment::Test);
         let request = backend
             .build_login_request(&LoginRequest {
                 username: "13800000000".to_owned(),
@@ -223,12 +324,15 @@ mod tests {
             .expect("login request should build");
 
         assert_eq!(request.method(), Method::POST);
-        assert_eq!(request.url().as_str(), LOGIN_URL);
+        assert_eq!(
+            request.url().as_str(),
+            format!("{TEST_BASE_URL}{LOGIN_PATH}")
+        );
         assert_eq!(
             request.headers()["scid"]
                 .to_str()
                 .expect("scid header should be text"),
-            SCID
+            TEST_SCID
         );
         assert_eq!(
             request.headers()[ACCEPT]
@@ -253,6 +357,53 @@ mod tests {
         .expect("request body should contain JSON");
         assert_eq!(body["username"], "13800000000");
         assert_eq!(body["password"], "password");
+    }
+
+    #[test]
+    fn builds_refresh_requests_for_each_environment() {
+        for (environment, base_url, scid) in [
+            (AuthEnvironment::Test, TEST_BASE_URL, TEST_SCID),
+            (
+                AuthEnvironment::Production,
+                PRODUCTION_BASE_URL,
+                PRODUCTION_SCID,
+            ),
+        ] {
+            let request = ShencomAuthBackend::new(environment)
+                .build_refresh_request("refresh-token")
+                .expect("refresh request should build");
+            let body: Value = serde_json::from_slice(
+                request
+                    .body()
+                    .and_then(reqwest::Body::as_bytes)
+                    .expect("JSON body should be buffered"),
+            )
+            .expect("request body should contain JSON");
+
+            assert_eq!(request.method(), Method::POST);
+            assert_eq!(request.url().as_str(), format!("{base_url}{REFRESH_PATH}"));
+            assert_eq!(
+                request.headers()["scid"]
+                    .to_str()
+                    .expect("scid header should be text"),
+                scid
+            );
+            assert_eq!(body["refreshToken"], "refresh-token");
+            assert_eq!(request.timeout(), Some(&LOGIN_TIMEOUT));
+        }
+    }
+
+    #[test]
+    fn validates_authentication_environment_values() {
+        assert_eq!(
+            AuthEnvironment::parse(" test ").expect("test should parse"),
+            AuthEnvironment::Test
+        );
+        assert_eq!(
+            AuthEnvironment::parse("PRODUCTION").expect("production should parse"),
+            AuthEnvironment::Production
+        );
+        assert!(AuthEnvironment::parse("staging").is_err());
     }
 
     #[test]

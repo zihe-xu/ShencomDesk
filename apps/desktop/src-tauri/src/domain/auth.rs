@@ -22,6 +22,20 @@ pub struct LoginData {
     pub additional_information: AccessToken,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshTokenRequest {
+    pub refresh_token: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshTokenResponse {
+    pub data: Option<AccessToken>,
+    pub errcode: String,
+    pub errmsg: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessToken {
@@ -66,6 +80,15 @@ impl AuthState {
             user: Some(token.additional_information.clone()),
             expires_at: Some(token.expiration),
         }
+    }
+}
+
+impl AccessToken {
+    pub fn refresh_token_value(&self) -> Option<&str> {
+        self.refresh_token
+            .as_str()
+            .or_else(|| self.refresh_token.get("value").and_then(Value::as_str))
+            .filter(|value| !value.trim().is_empty())
     }
 }
 
@@ -140,5 +163,66 @@ mod tests {
         assert_eq!(value["user"]["uid"], "user-id");
         assert!(value.get("accessToken").is_none());
         assert!(value.get("refreshToken").is_none());
+    }
+
+    #[test]
+    fn reads_refresh_tokens_from_login_and_refresh_contracts() {
+        let object_token: AccessToken = serde_json::from_value(serde_json::json!({
+            "additionalInformation": {
+                "realname": "测试用户",
+                "phone": "13800000000",
+                "username": "13800000000",
+                "uid": "user-id"
+            },
+            "expiration": 1_800_000_000,
+            "expiresIn": 3_600,
+            "refreshToken": { "value": "object-refresh-token" },
+            "scope": ["all"],
+            "tokenType": "bearer",
+            "value": "access-token"
+        }))
+        .expect("object refresh token should deserialize");
+        let string_token = AccessToken {
+            refresh_token: Value::String("string-refresh-token".to_owned()),
+            ..object_token.clone()
+        };
+
+        assert_eq!(
+            object_token.refresh_token_value(),
+            Some("object-refresh-token")
+        );
+        assert_eq!(
+            string_token.refresh_token_value(),
+            Some("string-refresh-token")
+        );
+    }
+
+    #[test]
+    fn deserializes_the_root_refresh_contract() {
+        let payload: RefreshTokenResponse = serde_json::from_value(serde_json::json!({
+            "data": {
+                "additionalInformation": {
+                    "realname": "测试用户",
+                    "phone": "13800000000",
+                    "username": "13800000000",
+                    "uid": "user-id"
+                },
+                "expiration": 1_800_000_000,
+                "expiresIn": 3_600,
+                "refreshToken": "rotated-refresh-token",
+                "scope": ["all"],
+                "tokenType": "bearer",
+                "value": "refreshed-access-token"
+            },
+            "errcode": "0000",
+            "errmsg": ""
+        }))
+        .expect("refresh response should deserialize");
+
+        let token = payload
+            .data
+            .expect("successful refresh should contain data");
+        assert_eq!(token.value, "refreshed-access-token");
+        assert_eq!(token.refresh_token_value(), Some("rotated-refresh-token"));
     }
 }

@@ -18,15 +18,7 @@ pub async fn login(state: State<'_, AppState>, request: LoginRequest) -> IpcResu
 
 #[tauri::command]
 pub async fn get_auth_state(state: State<'_, AppState>) -> IpcResult<AuthState> {
-    let service = state.auth_service().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || service.state())
-        .await
-        .map_err(|error| {
-            tracing::error!(error = %error, "IPC get_auth_state worker failed");
-            IpcError::auth_unavailable()
-        })?;
-
-    result.map_err(|error| {
+    state.auth_service().state().await.map_err(|error| {
         tracing::error!(error = %error, "IPC get_auth_state command failed");
         map_auth_error(&error)
     })

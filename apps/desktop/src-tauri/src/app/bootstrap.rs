@@ -5,7 +5,7 @@ use tauri::{App, Manager};
 use crate::{
     application::config_service::ConfigService,
     infrastructure::{
-        auth::{KeyringAuthSessionStore, ShencomAuthBackend},
+        auth::{AuthEnvironment, KeyringAuthSessionStore, ShencomAuthBackend},
         database::service::DatabaseService,
         filesystem::LocalFileRepository,
         image::LocalImageProcessor,
@@ -57,8 +57,9 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         error
     })?);
     let update_backend = Arc::new(TauriUpdateBackend::new(app.handle().clone()));
-    let auth_backend = Arc::new(ShencomAuthBackend::test_environment());
-    let auth_session_store = Arc::new(match KeyringAuthSessionStore::new() {
+    let auth_environment = AuthEnvironment::from_process_environment()?;
+    let auth_backend = Arc::new(ShencomAuthBackend::new(auth_environment));
+    let auth_session_store = Arc::new(match KeyringAuthSessionStore::new(auth_environment) {
         Ok(store) => store,
         Err(error) => {
             tracing::warn!(

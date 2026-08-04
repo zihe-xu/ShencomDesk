@@ -101,7 +101,7 @@ mod tests {
 
     use crate::{
         application::{
-            auth_service::{AuthBackendResponse, AuthSessionStore},
+            auth_service::{AuthBackendResponse, AuthSessionStore, RefreshBackendResponse},
             update_service::{UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind},
         },
         domain::{
@@ -133,6 +133,15 @@ mod tests {
             &self,
             _request: &LoginRequest,
         ) -> Result<AuthBackendResponse, AuthServiceError> {
+            Err(AuthServiceError::unavailable(
+                "not configured for state test",
+            ))
+        }
+
+        async fn refresh(
+            &self,
+            _refresh_token: &str,
+        ) -> Result<RefreshBackendResponse, AuthServiceError> {
             Err(AuthServiceError::unavailable(
                 "not configured for state test",
             ))

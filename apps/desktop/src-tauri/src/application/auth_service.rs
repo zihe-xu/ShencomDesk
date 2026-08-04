@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 
 use crate::domain::{
-    auth::{AccessToken, AuthState, LoginRequest, LoginResponse},
+    auth::{AccessToken, AuthState, LoginRequest, LoginResponse, RefreshTokenResponse},
     event::AppEvent,
 };
 
@@ -66,9 +66,19 @@ pub struct AuthBackendResponse {
     pub payload: LoginResponse,
 }
 
+#[derive(Debug, Clone)]
+pub struct RefreshBackendResponse {
+    pub http_status: u16,
+    pub payload: RefreshTokenResponse,
+}
+
 #[async_trait]
 pub trait AuthBackend: Send + Sync {
     async fn login(&self, request: &LoginRequest) -> Result<AuthBackendResponse, AuthServiceError>;
+    async fn refresh(
+        &self,
+        refresh_token: &str,
+    ) -> Result<RefreshBackendResponse, AuthServiceError>;
 }
 
 pub trait AuthSessionStore: Send + Sync {
@@ -115,16 +125,6 @@ impl AuthService {
             session: Arc::new(RwLock::new(session)),
             events,
         };
-
-        if service.session_is_expired() {
-            if let Err(error) = service.session_store.clear() {
-                tracing::warn!(
-                    error = %error,
-                    "expired authentication session could not be removed"
-                );
-            }
-            *service.write_session() = None;
-        }
 
         Ok(service)
     }
@@ -176,15 +176,9 @@ impl AuthService {
         Ok(AuthState::from_token(&token))
     }
 
-    pub fn state(&self) -> Result<AuthState, AuthServiceError> {
+    pub async fn state(&self) -> Result<AuthState, AuthServiceError> {
         if self.session_is_expired() {
-            if let Err(error) = self.session_store.clear() {
-                tracing::warn!(
-                    error = %error,
-                    "expired authentication session could not be removed"
-                );
-            }
-            *self.write_session() = None;
+            return self.refresh_expired_session().await;
         }
 
         Ok(self
@@ -194,9 +188,41 @@ impl AuthService {
             .unwrap_or_else(AuthState::signed_out))
     }
 
+    async fn refresh_expired_session(&self) -> Result<AuthState, AuthServiceError> {
+        let Some(refresh_token) = self
+            .read_session()
+            .as_ref()
+            .and_then(AccessToken::refresh_token_value)
+            .map(str::to_owned)
+        else {
+            self.clear_session()?;
+            return Ok(AuthState::signed_out());
+        };
+        let response = self.backend.refresh(&refresh_token).await?;
+        if response.http_status != SUCCESS_HTTP_STATUS {
+            return Err(AuthServiceError::unavailable(format!(
+                "refresh endpoint returned HTTP {}",
+                response.http_status
+            )));
+        }
+        if response.payload.errcode != SUCCESS_CODE {
+            self.clear_session()?;
+            return Ok(AuthState::signed_out());
+        }
+
+        let token = response.payload.data.ok_or_else(|| {
+            AuthServiceError::unavailable(
+                "successful refresh response did not contain authentication data",
+            )
+        })?;
+        self.session_store.save(&token)?;
+        *self.write_session() = Some(token.clone());
+
+        Ok(AuthState::from_token(&token))
+    }
+
     pub fn logout(&self) -> Result<AuthState, AuthServiceError> {
-        self.session_store.clear()?;
-        let session = self.write_session().take();
+        let session = self.clear_session()?;
         if let Some(token) = session {
             self.events.publish(AppEvent::UserLoggedOut {
                 user_id: token.additional_information.uid,
@@ -204,6 +230,11 @@ impl AuthService {
         }
 
         Ok(AuthState::signed_out())
+    }
+
+    fn clear_session(&self) -> Result<Option<AccessToken>, AuthServiceError> {
+        self.session_store.clear()?;
+        Ok(self.write_session().take())
     }
 
     fn session_is_expired(&self) -> bool {
@@ -244,8 +275,10 @@ mod tests {
 
     #[derive(Debug)]
     struct RecordingBackend {
-        response: AuthBackendResponse,
+        login_response: AuthBackendResponse,
+        refresh_response: RefreshBackendResponse,
         requests: Mutex<Vec<LoginRequest>>,
+        refresh_requests: Mutex<Vec<String>>,
     }
 
     #[async_trait]
@@ -258,7 +291,18 @@ mod tests {
                 .lock()
                 .expect("requests lock")
                 .push(request.clone());
-            Ok(self.response.clone())
+            Ok(self.login_response.clone())
+        }
+
+        async fn refresh(
+            &self,
+            refresh_token: &str,
+        ) -> Result<RefreshBackendResponse, AuthServiceError> {
+            self.refresh_requests
+                .lock()
+                .expect("refresh requests lock")
+                .push(refresh_token.to_owned());
+            Ok(self.refresh_response.clone())
         }
     }
 
@@ -341,6 +385,22 @@ mod tests {
         }
     }
 
+    fn refresh_response(
+        http_status: u16,
+        errcode: &str,
+        errmsg: &str,
+        token: Option<AccessToken>,
+    ) -> RefreshBackendResponse {
+        RefreshBackendResponse {
+            http_status,
+            payload: RefreshTokenResponse {
+                data: token,
+                errcode: errcode.to_owned(),
+                errmsg: errmsg.to_owned(),
+            },
+        }
+    }
+
     fn service(
         response: AuthBackendResponse,
         initial_session: Option<AccessToken>,
@@ -351,8 +411,15 @@ mod tests {
         EventBus,
     ) {
         let backend = Arc::new(RecordingBackend {
-            response,
+            login_response: response,
+            refresh_response: refresh_response(
+                200,
+                SUCCESS_CODE,
+                "",
+                Some(access_token(4_102_444_800)),
+            ),
             requests: Mutex::new(Vec::new()),
+            refresh_requests: Mutex::new(Vec::new()),
         });
         let store = Arc::new(RecordingStore {
             session: Mutex::new(initial_session),
@@ -461,8 +528,15 @@ mod tests {
     fn reports_session_storage_failures_separately_from_login_service_failures() {
         tauri::async_runtime::block_on(async {
             let backend = Arc::new(RecordingBackend {
-                response: response(200, SUCCESS_CODE, "", true),
+                login_response: response(200, SUCCESS_CODE, "", true),
+                refresh_response: refresh_response(
+                    200,
+                    SUCCESS_CODE,
+                    "",
+                    Some(access_token(4_102_444_800)),
+                ),
                 requests: Mutex::new(Vec::new()),
+                refresh_requests: Mutex::new(Vec::new()),
             });
             let store = Arc::new(RecordingStore {
                 session: Mutex::new(None),
@@ -481,7 +555,7 @@ mod tests {
 
             assert_eq!(error.kind(), AuthServiceErrorKind::Storage);
             assert_eq!(
-                service.state().expect("state should load"),
+                service.state().await.expect("state should load"),
                 AuthState::signed_out()
             );
         });
@@ -489,37 +563,66 @@ mod tests {
 
     #[test]
     fn restores_a_non_expired_session_without_exposing_tokens() {
-        let (service, _, _, _) = service(
-            response(200, SUCCESS_CODE, "", true),
-            Some(access_token(4_102_444_800)),
-        );
+        tauri::async_runtime::block_on(async {
+            let (service, _, _, _) = service(
+                response(200, SUCCESS_CODE, "", true),
+                Some(access_token(4_102_444_800)),
+            );
 
-        let state = service.state().expect("stored session should load");
-        let value = serde_json::to_value(&state).expect("state should serialize");
+            let state = service.state().await.expect("stored session should load");
+            let value = serde_json::to_value(&state).expect("state should serialize");
 
-        assert!(state.authenticated);
-        assert_eq!(state.user.expect("user").uid, "user-id");
-        assert!(value.get("value").is_none());
-        assert!(value.get("refreshToken").is_none());
+            assert!(state.authenticated);
+            assert_eq!(state.user.expect("user").uid, "user-id");
+            assert!(value.get("value").is_none());
+            assert!(value.get("refreshToken").is_none());
+        });
     }
 
     #[test]
-    fn clears_an_expired_session_during_initialization() {
-        let (service, _, store, _) =
-            service(response(200, SUCCESS_CODE, "", true), Some(access_token(1)));
+    fn refreshes_an_expired_session_and_persists_the_replacement() {
+        tauri::async_runtime::block_on(async {
+            let (service, backend, store, _) =
+                service(response(200, SUCCESS_CODE, "", true), Some(access_token(1)));
 
-        assert_eq!(
-            service.state().expect("state should load"),
-            AuthState::signed_out()
-        );
-        assert_eq!(*store.clear_count.lock().expect("clear count lock"), 1);
+            let state = service.state().await.expect("refresh should succeed");
+
+            assert!(state.authenticated);
+            assert_eq!(state.expires_at, Some(4_102_444_800));
+            assert_eq!(
+                backend
+                    .refresh_requests
+                    .lock()
+                    .expect("refresh requests lock")
+                    .as_slice(),
+                ["refresh-token"]
+            );
+            assert_eq!(
+                store
+                    .session
+                    .lock()
+                    .expect("session lock")
+                    .as_ref()
+                    .expect("refreshed token should be stored")
+                    .value,
+                "access-token"
+            );
+            assert_eq!(*store.clear_count.lock().expect("clear count lock"), 0);
+        });
     }
 
     #[test]
     fn starts_signed_out_when_the_session_store_cannot_be_loaded() {
         let backend = Arc::new(RecordingBackend {
-            response: response(200, SUCCESS_CODE, "", true),
+            login_response: response(200, SUCCESS_CODE, "", true),
+            refresh_response: refresh_response(
+                200,
+                SUCCESS_CODE,
+                "",
+                Some(access_token(4_102_444_800)),
+            ),
             requests: Mutex::new(Vec::new()),
+            refresh_requests: Mutex::new(Vec::new()),
         });
         let store = Arc::new(RecordingStore {
             session: Mutex::new(None),
@@ -532,17 +635,21 @@ mod tests {
         let service = AuthService::new(backend, store, EventBus::new(8))
             .expect("session recovery failure should not prevent startup");
 
-        assert_eq!(
-            service.state().expect("signed-out state should load"),
-            AuthState::signed_out()
-        );
+        tauri::async_runtime::block_on(async {
+            assert_eq!(
+                service.state().await.expect("signed-out state should load"),
+                AuthState::signed_out()
+            );
+        });
     }
 
     #[test]
-    fn signs_out_an_expired_session_even_when_persistent_cleanup_fails() {
+    fn reports_storage_failure_when_a_rejected_refresh_cannot_clear_the_session() {
         let backend = Arc::new(RecordingBackend {
-            response: response(200, SUCCESS_CODE, "", true),
+            login_response: response(200, SUCCESS_CODE, "", true),
+            refresh_response: refresh_response(200, "401001", "refresh token expired", None),
             requests: Mutex::new(Vec::new()),
+            refresh_requests: Mutex::new(Vec::new()),
         });
         let store = Arc::new(RecordingStore {
             session: Mutex::new(Some(access_token(4_102_444_800))),
@@ -555,12 +662,42 @@ mod tests {
             .expect("auth service should initialize");
         *service.write_session() = Some(access_token(1));
 
-        let state = service
-            .state()
-            .expect("persistent cleanup failure should not keep an expired session");
+        let error = tauri::async_runtime::block_on(async {
+            service
+                .state()
+                .await
+                .expect_err("persistent cleanup failure should be reported")
+        });
 
-        assert_eq!(state, AuthState::signed_out());
+        assert_eq!(error.kind(), AuthServiceErrorKind::Storage);
         assert_eq!(*store.clear_count.lock().expect("clear count lock"), 1);
+    }
+
+    #[test]
+    fn clears_a_session_when_the_refresh_token_is_rejected() {
+        tauri::async_runtime::block_on(async {
+            let backend = Arc::new(RecordingBackend {
+                login_response: response(200, SUCCESS_CODE, "", true),
+                refresh_response: refresh_response(200, "401001", "refresh token expired", None),
+                requests: Mutex::new(Vec::new()),
+                refresh_requests: Mutex::new(Vec::new()),
+            });
+            let store = Arc::new(RecordingStore {
+                session: Mutex::new(Some(access_token(1))),
+                clear_count: Mutex::new(0),
+                load_error: false,
+                save_error: false,
+                clear_error: false,
+            });
+            let service = AuthService::new(backend, store.clone(), EventBus::new(8))
+                .expect("auth service should initialize");
+
+            assert_eq!(
+                service.state().await.expect("rejection should sign out"),
+                AuthState::signed_out()
+            );
+            assert!(store.session.lock().expect("session lock").is_none());
+        });
     }
 
     #[test]

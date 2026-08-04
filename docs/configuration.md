@@ -11,6 +11,17 @@
 }
 ```
 
+## 认证环境变量
+
+Rust 认证适配器在启动时读取 `SHENDESK_AUTH_ENVIRONMENT`：
+
+| 值 | 认证域名 | 凭据库账户 |
+|---|---|---|
+| `test`（默认） | `https://tst-crm.shencom.cn` | `test-session-v1` |
+| `production` | `https://crm.shencom.cn` | `production-session-v1` |
+
+登录与 Token 刷新会使用所选环境对应的 `scid`。不支持的值会使初始化失败，不会回退到另一个环境。该变量不属于用户可编辑的 `AppConfig`，切换环境不会复用另一环境保存的 Token。
+
 ## 存储
 
 配置以 JSON 形式存储在 SQLite 的 `app_config` 表中，键名为 `app.settings`。数据库文件位于 Tauri 应用数据目录的 `app.sqlite`。

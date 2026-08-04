@@ -45,7 +45,7 @@ React Service
 
 Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传输边界和转换错误，但不得直接执行 SQL、文件 I/O、WASM 运行时逻辑或更新网络请求。插件 Command 只把请求委托给 `PluginService`；更新 Command 只把检查与安装委托给 `UpdateService`，不直接构建 updater client、读取更新地址或处理签名。
 
-认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码、HTTP 状态语义、会话状态和登录/登出事件；Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 网络适配器负责，系统凭据库存取由同模块的 `KeyringAuthSessionStore` 负责。
+认证 Command 只把请求委托给 `AuthService`。`AuthService` 负责输入归一化、成功码、HTTP 状态语义、会话状态和登录/登出事件；Shencom 请求地址、请求头、超时与 JSON 解码由 `infrastructure/auth` 网络适配器负责，系统凭据库存取由同模块的 `KeyringAuthSessionStore` 负责。`get_auth_state` 恢复到过期 Access Token 时会在 Rust Core 内使用 Refresh Token 换取并持久化新会话。
 
 `AuthState` 只包含 `authenticated`、用户资料和过期时间，不包含 Access Token 或 Refresh Token。登录成功后 Token 只保留在 Rust Core 和系统凭据库中。
 
