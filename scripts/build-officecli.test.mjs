@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -85,4 +85,12 @@ test("rejects a source archive with the wrong hash", async () => {
   const archive = join(directory, "source.tar.gz");
   await writeFile(archive, "tampered archive");
   await assert.rejects(() => verifyArchiveHash(archive, "1".repeat(64)), /SHA-256 mismatch/);
+});
+
+test("keeps vendored OfficeCLI files byte-stable on Windows checkouts", async () => {
+  const attributes = await readFile(
+    new URL("../.gitattributes", import.meta.url),
+    "utf8",
+  );
+  assert.match(attributes, /^third_party\/officecli\/\* text eol=lf$/m);
 });
