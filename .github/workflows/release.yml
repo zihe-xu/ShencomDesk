@@ -156,7 +156,7 @@ jobs:
           tauriScript: ${{ github.workspace }}/.github/scripts/build-verify-macos-release.sh
           args: ${{ matrix.args }}
 
-      - name: Build, sign, and upload Windows updater release assets
+      - name: Build, install, verify, and upload Windows release assets
         if: runner.os == 'Windows'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
@@ -164,6 +164,7 @@ jobs:
           SHENDESK_UPDATER_PUBLIC_KEY: ${{ vars.SHENDESK_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
@@ -175,4 +176,7 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: false
           retryAttempts: 2
+          # The wrapper installs and smokes the MSI before tauri-action uploads
+          # any release asset, so a failed final-package check blocks publishing.
+          tauriScript: ${{ github.workspace }}/.github/scripts/build-verify-windows-release.cmd
           args: ${{ matrix.args }}

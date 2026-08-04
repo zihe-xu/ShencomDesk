@@ -10,6 +10,7 @@ ShenDesk — Shencom Desktop Platform（深传科技桌面应用平台）。
 - Tailwind CSS 4
 - shadcn/ui
 - Rust
+- OfficeCLI（固定源码与 .NET 10 SDK 构建的原生 sidecar）
 
 ## 项目结构
 
@@ -50,7 +51,18 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --a
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --all-features
 ```
 
-`pnpm test` 同时覆盖前端错误映射、图片压缩 IPC、合并后构建判定和签名发布预检约束。
+`pnpm test` 同时覆盖前端错误映射、图片压缩/Office IPC、OfficeCLI 清单与 smoke 校验、合并后构建判定和签名发布预检约束。
+
+## Office 文档引擎
+
+DOCX、XLSX、PPTX 操作由 Rust Core 调用随应用打包的固定 OfficeCLI sidecar 完成。构建脚本校验 tag、commit、源码 SHA-256、NuGet lock、法律文件和固定 .NET SDK；运行时不读取 `PATH`，且始终禁用 OfficeCLI 自更新。
+
+```bash
+pnpm officecli:build -- --target aarch64-apple-darwin
+# 也支持 x86_64-apple-darwin、x86_64-pc-windows-msvc
+```
+
+普通 CI 至少真实编译一个固定平台；合并后与正式发布从最终 App/MSI 安装目录验证对应架构、精确版本、`LICENSE`/`NOTICE`/第三方声明及 DOCX round trip。详细矩阵见 [`docs/automated-builds.md`](docs/automated-builds.md)，运行时边界见 [`docs/rust-core.md`](docs/rust-core.md) 与 [`docs/security.md`](docs/security.md)。
 
 ## 图片压缩
 
@@ -90,6 +102,6 @@ Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 m
 - PR 关闭但未合并：不执行构建。
 - 需要补构建时：可在 GitHub Actions 中使用 `workflow_dispatch` 手动触发。
 
-合并后 Artifact 用于构建验证，不包含正式更新签名或 Release 元数据；正式发布只由版本 Tag 的 `Signed desktop release` Workflow 生成。构建规则见 [`docs/automated-builds.md`](docs/automated-builds.md)。
+合并后 Artifact 用于构建验证，不包含正式更新签名或 Release 元数据；上传前已从最终包验证 OfficeCLI。正式发布只由版本 Tag 的 `Signed desktop release` Workflow 生成，任一平台安装后 smoke 失败都会阻止该平台资产上传。构建规则见 [`docs/automated-builds.md`](docs/automated-builds.md)。
 
 > Rust 与 Tauri 的平台依赖请参考 Tauri 官方环境配置文档。

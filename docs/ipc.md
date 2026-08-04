@@ -59,6 +59,8 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 
 Office Command 只委托 `OfficeService`，提供引擎状态、创建、结构化读取、白名单 batch、PNG 预览和 owned document close。长操作通过 `Channel<OfficeProgress>` 发送固定阶段。batch 最多 100 项、文本合计最多 16 KiB，只接受添加 Word 段落、设置 Sheet1 单元格、添加 PowerPoint 幻灯片和文本四种类型，不接受任意命令、属性或路径表达式。修改始终写入 staging 副本，close 成功后才以不覆盖方式提交到 `outputPath`；原文件保持不变。预览文件位于单次调用的受管临时目录，读取并校验 PNG 后立即清理，只把 `image/png` data URL 返回 WebView。请求不接受二进制路径、环境变量或原始 argv，也不提供通用 OfficeCLI 执行入口。
 
+OfficeCLI 是与 WebView 隔离的原生子进程，不是 Tauri plugin。IPC 权限只允许调用上述六个业务命令，不授予 shell、任意进程执行或 sidecar 自更新能力；最终安装包会在 CI 中验证固定版本、对应架构和关闭后持久化。
+
 ## 稳定错误协议
 
 可失败命令返回经过脱敏的结构：

@@ -115,6 +115,11 @@ recording runtime，不依赖真实 OfficeCLI。`OfficeCliRuntime` 位于
 Infrastructure，只解析应用包内的固定 sidecar，并负责受限进程执行、输出
 上限、超时、取消、退出状态与 JSON 校验。
 
+sidecar 不由 Rust 在运行时下载。CI 使用固定 .NET SDK、commit、源码哈希和
+NuGet lock 构建每个平台的原生二进制，并从最终 macOS App 或 Windows MSI
+安装目录验证架构、精确版本、法律声明和 DOCX round trip。所有运行时及 smoke
+调用都设置 `OFFICECLI_SKIP_UPDATE=1`，避免原生进程尝试修改应用包。
+
 `commands::office` 提供类型化的引擎状态、创建、结构化读取、白名单 batch、
 PNG 预览和 owned document close，并通过阶段 Channel 报告长操作进度。创建
 在同目录 staging 中完成并 close 后以 no-clobber 方式提交；修改先复制原文件，

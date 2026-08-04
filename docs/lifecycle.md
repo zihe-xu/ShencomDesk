@@ -16,6 +16,8 @@ ShenDesk 使用 Tauri `App::run` 的事件回调统一处理运行时生命周�
 10. 发布 `application_ready`。
 11. 记录 `application.ready` 操作日志。
 
+打包流水线从固定源码生成与目标平台同架构的 OfficeCLI，并在最终 App 或 MSI 安装目录执行版本和文档 round trip。运行时只会解析这个随包 sidecar；构建 smoke 与应用启动的所有调用都设置 `OFFICECLI_SKIP_UPDATE=1`，因此 sidecar 不会在启动或运行期间修改应用包。
+
 ## 退出顺序
 
 资源清理只在 `RunEvent::Exit` 执行：

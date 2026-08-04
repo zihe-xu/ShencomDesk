@@ -95,6 +95,8 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - ShenDesk 只登记并清理自己打开的 session 和自己启动的临时子进程；退出时不扫描或终止用户的 OfficeCLI 进程。
 - WebView 只接收八种稳定 Office 错误码和固定用户消息；绝对路径、临时目录、Named Pipe、原始 stderr 与文档内容不会进入 IPC 错误或进度 Channel。
 - 创建和修改在 staging 文件上执行，只有 resident 成功 close 后才 no-clobber 提交；修改不会覆盖输入文件。PNG 预览限制为 16 MiB，临时文件读取后立即清理，只通过现有 `data:` 图片 CSP 展示，不加载 OfficeCLI HTML，也不启动 `watch`。
+- OfficeCLI 是具有当前桌面用户原生进程权限的受信任供应链组件，不受 WebView CSP 或 WASM 沙箱限制。仓库以固定 tag、commit、源码 SHA-256、NuGet lock 和 .NET SDK 构建；最终 App/MSI 必须包含对应架构 sidecar 及 `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.txt`。
+- 合并后与发布 smoke 都在 `OFFICECLI_SKIP_UPDATE=1` 下验证精确版本和 DOCX round trip。macOS 还要求 sidecar Developer ID 签名及 `allow-jit` entitlement；Windows 从 MSI 静默安装后的目录验收。检查发生在正常 Artifact 或 Release 资产上传之前。
 
 ## WASM 插件沙箱
 
