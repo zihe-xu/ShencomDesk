@@ -9,6 +9,13 @@
     }
   },
   "bundle": {
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/officecli"],
+    "resources": {
+      "binaries/officecli-licenses/": "officecli-licenses/"
+    },
+    "macOS": {
+      "entitlements": "officecli.entitlements"
+    }
   }
 }

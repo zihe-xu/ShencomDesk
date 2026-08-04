@@ -138,10 +138,14 @@ test("platform configs declare generated installer icons", () => {
   const macosConfig = JSON.parse(
     readFileSync(new URL("tauri.macos.conf.json", configRoot), "utf8"),
   );
+  const officeCliConfig = JSON.parse(
+    readFileSync(new URL("tauri.officecli.conf.json", configRoot), "utf8"),
+  );
 
   assert.equal(baseConfig.bundle.icon, undefined);
   assert.deepEqual(windowsConfig.bundle.icon, ["icons/icon.ico"]);
   assert.deepEqual(macosConfig.bundle.icon, ["icons/icon.icns"]);
+  assert.deepEqual(officeCliConfig.bundle.externalBin, ["binaries/officecli"]);
 });
 
 test("Windows build invokes pnpm through cmd.exe", () => {
@@ -151,14 +155,25 @@ test("Windows build invokes pnpm through cmd.exe", () => {
 
   assert.deepEqual(command, {
     command: "C:\\Windows\\System32\\cmd.exe",
-    args: ["/d", "/s", "/c", "pnpm run tauri build"],
+    args: [
+      "/d",
+      "/s",
+      "/c",
+      "pnpm run tauri build --config src-tauri/tauri.officecli.conf.json",
+    ],
   });
 });
 
 test("non-Windows build invokes pnpm directly", () => {
   assert.deepEqual(resolveBuildProcess("linux", {}), {
     command: "pnpm",
-    args: ["run", "tauri", "build"],
+    args: [
+      "run",
+      "tauri",
+      "build",
+      "--config",
+      "src-tauri/tauri.officecli.conf.json",
+    ],
   });
 });
 

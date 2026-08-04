@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/iOfficeAI/OfficeCLI",
+  "tag": "v1.0.143",
+  "commit": "fd4adab4dbe3283b62e3edcfad124dd648fa74bc",
+  "sourceArchive": {
+    "url": "https://github.com/iOfficeAI/OfficeCLI/archive/fd4adab4dbe3283b62e3edcfad124dd648fa74bc.tar.gz",
+    "sha256": "577c7fc114a4f6cde96398cb857bc0904d1e36705336facb61dae8fb372a782a"
+  },
+  "dotnetSdk": "10.0.302",
+  "project": "src/officecli/officecli.csproj",
+  "nugetLockDestination": "src/officecli/packages.lock.json",
+  "nugetLocks": {
+    "aarch64-apple-darwin": "packages.osx-arm64.lock.json",
+    "x86_64-apple-darwin": "packages.osx-x64.lock.json",
+    "x86_64-pc-windows-msvc": "packages.win-x64.lock.json"
+  },
+  "license": "Apache-2.0",
+  "licenseFiles": [
+    "LICENSE",
+    "NOTICE",
+    "THIRD-PARTY-NOTICES.txt"
+  ]
+}
