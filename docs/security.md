@@ -75,6 +75,14 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - PNG 使用无损优化；JPEG 重编码可能移除 EXIF 等元数据，本期不承诺元数据保留。
 - 逐项 Channel 错误和命令错误都不会包含绝对路径、编解码器内部文本或 OS 错误。
 
+## OfficeCLI 进程边界
+
+- OfficeCLI 仅由 Rust Infrastructure 从 ShenDesk 应用包内的固定位置解析；不读取 `PATH`，不回退到用户安装位置。
+- 每个子进程固定设置 `OFFICECLI_SKIP_UPDATE=1`，调用方不能提供可执行文件路径、环境变量或原始 argv。
+- stdout/stderr 均被捕获并限制大小；超时、取消、异常退出、超量输出和无效 JSON 只返回稳定脱敏错误。
+- 日志不记录文档路径、Named Pipe、原始 stderr 或文档内容，EventBus 不发布 Office 文档生命周期细节。
+- ShenDesk 只登记并清理自己打开的 session 和自己启动的临时子进程；退出时不扫描或终止用户的 OfficeCLI 进程。
+
 ## WASM 插件沙箱
 
 插件 ABI v1 使用默认拒绝策略：

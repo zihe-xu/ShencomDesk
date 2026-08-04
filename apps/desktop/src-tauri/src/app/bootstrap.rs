@@ -10,6 +10,7 @@ use crate::{
         filesystem::LocalFileRepository,
         image::LocalImageProcessor,
         logging,
+        office::OfficeCliRuntime,
         plugins::{LocalPluginRepository, WasmtimePluginRuntime},
         updater::TauriUpdateBackend,
     },
@@ -47,6 +48,16 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     logging::record_operation("config.load", "success");
 
     let plugin_root = app_data_dir.join("plugins");
+    let office_runtime = Arc::new(OfficeCliRuntime::bundled().inspect_err(|error| {
+        tracing::error!(error_kind = ?error.kind(), "OfficeCLI runtime initialization failed");
+    })?);
+    let office_status = tauri::async_runtime::block_on(
+        crate::application::office_service::OfficeRuntime::probe(office_runtime.as_ref()),
+    );
+    match office_status {
+        Ok(status) => tracing::info!(version = status.version, "OfficeCLI runtime ready"),
+        Err(error) => tracing::warn!(error_kind = ?error.kind(), "OfficeCLI runtime unavailable"),
+    }
     let plugin_repository =
         Arc::new(LocalPluginRepository::new(&plugin_root).map_err(|error| {
             tracing::error!(error = %error, "plugin repository initialization failed");
@@ -72,6 +83,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState::new(
         Arc::new(LocalFileRepository::default()),
         Arc::new(LocalImageProcessor),
+        office_runtime,
         plugin_repository,
         plugin_runtime,
         update_backend,
@@ -93,6 +105,7 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     logging::record_operation("update_service.initialize", "success");
     logging::record_operation("auth_service.initialize", "success");
     logging::record_operation("image_service.initialize", "success");
+    logging::record_operation("office_service.initialize", "success");
 
     app.manage(database);
     app.manage(state);

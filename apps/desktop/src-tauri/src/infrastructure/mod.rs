@@ -5,6 +5,7 @@ pub mod database;
 pub mod filesystem;
 pub mod image;
 pub mod logging;
+pub mod office;
 pub mod plugins;
 pub mod updater;
 

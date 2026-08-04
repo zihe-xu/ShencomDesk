@@ -7,6 +7,7 @@ pub mod config;
 pub mod event;
 pub mod file;
 pub mod image;
+pub mod office;
 pub mod plugin;
 pub mod task;
 pub mod update;

@@ -9,7 +9,7 @@ Application Service ──定义──> Repository / Runtime Port
       ↓                              ↑
 Domain                       Infrastructure Adapter
                                       ↓
-                       SQLx / notify / Wasmtime / Tauri Updater
+                 SQLx / notify / Wasmtime / OfficeCLI / Tauri Updater
 ```
 
 ## 目录职责
@@ -18,7 +18,7 @@ Domain                       Infrastructure Adapter
 - `commands`：接收 Tauri IPC 调用，只做输入输出适配。
 - `application`：组织用例、服务流程，定义持久化/运行时端口并提供进程内 EventBus。
 - `domain`：领域类型、规则与事件协议，不依赖 Tauri 或基础设施。
-- `infrastructure`：数据库、缓存、文件、网络、系统、WASM Runtime 和 Tauri Updater 适配器。
+- `infrastructure`：数据库、缓存、文件、网络、系统、WASM Runtime、OfficeCLI Runtime 和 Tauri Updater 适配器。
 - `utils`：错误类型等横切工具。
 
 ## 约束
@@ -105,3 +105,16 @@ ImageService ──────> ImageProcessor
 ```
 
 Command 只负责 `spawn_blocking`、Channel 和稳定错误映射。单文件失败不会终止其余图片，已有输出文件不会被覆盖。
+
+## Office Runtime 依赖倒置
+
+`application::office_service::OfficeRuntime` 定义固定版本探测和文档
+open/close 生命周期端口。`OfficeService` 负责格式与路径校验、同一标准化
+文档的串行化、owned session 登记、取消和 best-effort close；测试可注入
+recording runtime，不依赖真实 OfficeCLI。`OfficeCliRuntime` 位于
+Infrastructure，只解析应用包内的固定 sidecar，并负责受限进程执行、输出
+上限、超时、取消、退出状态与 JSON 校验。
+
+当前不提供 Office Tauri Command；WebView 无法传入二进制路径、环境变量或
+原始 argv。具体创建、读取、batch 修改和预览业务操作由后续 Office 用例在
+这个 port 上增加类型化方法。

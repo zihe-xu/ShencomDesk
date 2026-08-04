@@ -62,3 +62,34 @@ This invariant applies to production execution, smoke tests, and future helper
 commands. Runtime code must resolve the bundled sidecar internally and expose
 only typed document operations; callers must not provide executable paths or
 arbitrary OfficeCLI subcommands.
+
+`application::office_service::OfficeRuntime` is the Rust Core port. Its initial
+surface is deliberately limited to version probing and document `open`/`close`
+lifecycle operations. `infrastructure::office::OfficeCliRuntime` resolves only
+the `officecli` executable bundled beside ShenDesk, compares `--version` with
+the pinned manifest using an exact SemVer token match, passes arguments without
+shell parsing, and captures both
+output streams with fixed limits. Missing or incompatible binaries, timeout,
+cancellation, non-zero exit, crash, oversized output, and invalid JSON are
+mapped to stable service errors. Logs record operation names, error kinds, exit
+codes, and byte counts only; they do not record document paths, document
+content, named-pipe names, or raw stderr.
+
+Startup probing has its own two-second timeout instead of using the 30-second
+document-operation timeout. Lifecycle JSON must contain a boolean
+`success: true`; valid JSON with a missing or non-boolean success field is
+rejected. Once `open` starts, the runtime lets its bounded ownership handshake
+finish instead of killing only the transient CLI and orphaning its detached
+resident. If cancellation arrived during that handshake, a newly started
+resident is closed immediately; a reused resident is left untouched.
+
+`OfficeService` canonicalizes supported existing document paths before launch
+and uses one async mutex per canonical path, so two ShenDesk operations cannot
+write the same document concurrently. A session is registered as owned only
+after `open` succeeds. Application operations use `with_document`, which makes
+a best-effort `close` after success, failure, or cancellation when that open
+started a new resident. A pre-existing resident may be reused but is never
+registered as owned or closed by ShenDesk. Shutdown first
+cancels transient children registered by this runtime and then closes only the
+owned document sessions; it never enumerates or terminates unrelated OfficeCLI
+or user processes. No Office lifecycle details are published on EventBus.
