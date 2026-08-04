@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-office-document"
+description = "Enables the create_office_document command without any pre-configured scope."
+commands.allow = ["create_office_document"]
+
+[[permission]]
+identifier = "deny-create-office-document"
+description = "Denies the create_office_document command without any pre-configured scope."
+commands.deny = ["create_office_document"]
