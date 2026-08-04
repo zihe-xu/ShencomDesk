@@ -7,11 +7,12 @@ import { login } from "@/services/auth";
 import { ShenDeskIpcError } from "@/services/tauri";
 
 interface LoginProps {
-  onSuccess: (displayName: string) => void;
+  initialPhone: string;
+  onSuccess: (displayName: string, phone: string) => void;
 }
 
-export function Login({ onSuccess }: LoginProps) {
-  const [phone, setPhone] = useState("");
+export function Login({ initialPhone, onSuccess }: LoginProps) {
+  const [phone, setPhone] = useState(initialPhone);
   const [password, setPassword] = useState("");
   const [rememberPassword, setRememberPassword] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -42,6 +43,7 @@ export function Login({ onSuccess }: LoginProps) {
       });
       onSuccess(
         state.user?.realname || state.user?.username || phone.trim(),
+        phone.trim(),
       );
     } catch (requestError: unknown) {
       setError(formatLoginError(requestError));

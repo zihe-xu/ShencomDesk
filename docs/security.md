@@ -64,6 +64,7 @@ WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令�
 - 网络失败、超时、非 200 状态、非 JSON 响应或缺少成功数据统一映射为脱敏的 `auth_unavailable`。
 - 系统凭据库读取、写入或清理失败统一映射为脱敏的 `auth_storage_unavailable`，避免把本地 Keychain / Credential Manager 故障误报为认证服务不可用。
 - Access Token、Refresh Token 和原始密码不写入日志，也不返回 WebView。IPC `AuthState` 只包含登录状态、用户资料和过期时间。
+- WebView 仅在登录成功后把用户实际输入的手机号写入本地存储，用于退出登录后回填；不会保存密码，也不会使用 Token 或服务端用户资料中的手机号作为回填值。
 - 完整 Token 会话以带版本号的 JSON 写入操作系统凭据库：macOS 使用 Keychain，Windows 使用 Credential Manager。服务名固定为 `com.shencom.shendesk.auth`；测试和生产环境分别使用 `test-session-v1` 与 `production-session-v1`，避免跨环境复用 Token。
 - 应用启动时从系统凭据库恢复会话。Access Token 过期时，Rust Core 向当前环境的 `/service-uaa/auth/token-user/refresh` 提交 Refresh Token；成功后先安全持久化新 Token，再更新内存会话。服务端拒绝 Refresh Token 时清除本地会话；网络、HTTP 或响应解析失败时保留会话，允许下次恢复重试。
 - Refresh Token 不进入 WebView、IPC 公共载荷或日志。损坏、版本不兼容或缺少可用 Refresh Token 的会话会被删除。凭据库不可用或恢复失败时应用仍以未登录状态启动。

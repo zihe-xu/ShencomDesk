@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: AppConfig = {
   language: "zh-CN",
   autoStart: true,
 };
+const SAVED_PHONE_KEY = "shendesk.login.phone";
 
 function displayNameFrom(state: AuthState): string | null {
   if (!state.authenticated || !state.user) {
@@ -39,6 +40,9 @@ function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [savedPhone, setSavedPhone] = useState(
+    () => window.localStorage.getItem(SAVED_PHONE_KEY) || "",
+  );
   const [isRestoring, setIsRestoring] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSavingTheme, setIsSavingTheme] = useState(false);
@@ -140,7 +144,9 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = (name: string) => {
+  const handleLoginSuccess = (name: string, phone: string) => {
+    window.localStorage.setItem(SAVED_PHONE_KEY, phone);
+    setSavedPhone(phone);
     setDisplayName(name);
     navigate("/workspace", { replace: true });
   };
@@ -182,7 +188,10 @@ function App() {
             displayName ? (
               <Navigate replace to="/workspace" />
             ) : (
-              <Login onSuccess={handleLoginSuccess} />
+              <Login
+                initialPhone={savedPhone}
+                onSuccess={handleLoginSuccess}
+              />
             )
           }
           path="/login"
