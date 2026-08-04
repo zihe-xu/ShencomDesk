@@ -4,6 +4,9 @@ ShenDesk builds OfficeCLI from an audited source snapshot and bundles it as a
 Tauri sidecar. OfficeCLI is infrastructure owned by Rust Core; it is not a WASM
 plugin and must never be exposed as an arbitrary command runner to the WebView.
 
+Product scope and acceptance criteria are documented in
+[`officecli-integration-prd.md`](officecli-integration-prd.md).
+
 ## Pinned supply chain
 
 `third_party/officecli/version.json` is the source of truth for the upstream
