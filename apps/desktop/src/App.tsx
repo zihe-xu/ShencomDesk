@@ -1,4 +1,11 @@
 import { useEffect, useState } from "react";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import { Login } from "@/components/Login";
 import { Workspace } from "@/components/Workspace";
@@ -29,10 +36,9 @@ function displayNameFrom(state: AuthState): string | null {
 }
 
 function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [displayName, setDisplayName] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"workspace" | "image-compression">(
-    "workspace",
-  );
   const [isRestoring, setIsRestoring] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSavingTheme, setIsSavingTheme] = useState(false);
@@ -92,13 +98,24 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isRestoring) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("[data-route-heading]")?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isRestoring, location.pathname]);
+
   const handleLogout = async () => {
     setError("");
     setIsLoggingOut(true);
     try {
       const state = await logout();
       setDisplayName(displayNameFrom(state));
-      setActiveView("workspace");
+      navigate("/login", { replace: true });
     } catch (requestError: unknown) {
       setError(formatAuthError(requestError));
     } finally {
@@ -123,6 +140,11 @@ function App() {
     }
   };
 
+  const handleLoginSuccess = (name: string) => {
+    setDisplayName(name);
+    navigate("/workspace", { replace: true });
+  };
+
   if (isRestoring) {
     return (
       <main className="min-h-screen bg-background px-5 py-8 text-foreground sm:px-8">
@@ -145,37 +167,72 @@ function App() {
 
   return (
     <>
-      {displayName ? (
-        activeView === "workspace" ? (
-          <Workspace
-            displayName={displayName}
-            error={error}
-            isLoggingOut={isLoggingOut}
-            isSavingTheme={isSavingTheme}
-            onLogout={() => void handleLogout()}
-            onOpenImageCompression={() => setActiveView("image-compression")}
-            onThemeChange={(theme) => void handleThemeChange(theme)}
-            theme={config.theme}
-          />
-        ) : (
-          <ImageCompression
-            displayName={displayName}
-            error={error}
-            isLoggingOut={isLoggingOut}
-            isSavingTheme={isSavingTheme}
-            onLogout={() => void handleLogout()}
-            onThemeChange={(theme) => void handleThemeChange(theme)}
-            theme={config.theme}
-          />
-        )
-      ) : (
-        <Login
-          onSuccess={(name) => {
-            setDisplayName(name);
-            setActiveView("workspace");
-          }}
+      <Routes>
+        <Route
+          element={
+            <Navigate
+              replace
+              to={displayName ? "/workspace" : "/login"}
+            />
+          }
+          path="/"
         />
-      )}
+        <Route
+          element={
+            displayName ? (
+              <Navigate replace to="/workspace" />
+            ) : (
+              <Login onSuccess={handleLoginSuccess} />
+            )
+          }
+          path="/login"
+        />
+        <Route
+          element={
+            displayName ? (
+              <Workspace
+                displayName={displayName}
+                error={error}
+                isLoggingOut={isLoggingOut}
+                isSavingTheme={isSavingTheme}
+                onLogout={() => void handleLogout()}
+                onThemeChange={(theme) => void handleThemeChange(theme)}
+                theme={config.theme}
+              />
+            ) : (
+              <Navigate replace to="/login" />
+            )
+          }
+          path="/workspace"
+        />
+        <Route
+          element={
+            displayName ? (
+              <ImageCompression
+                displayName={displayName}
+                error={error}
+                isLoggingOut={isLoggingOut}
+                isSavingTheme={isSavingTheme}
+                onLogout={() => void handleLogout()}
+                onThemeChange={(theme) => void handleThemeChange(theme)}
+                theme={config.theme}
+              />
+            ) : (
+              <Navigate replace to="/login" />
+            )
+          }
+          path="/tools/image-compression"
+        />
+        <Route
+          element={
+            <Navigate
+              replace
+              to={displayName ? "/workspace" : "/login"}
+            />
+          }
+          path="*"
+        />
+      </Routes>
       <Toaster />
     </>
   );

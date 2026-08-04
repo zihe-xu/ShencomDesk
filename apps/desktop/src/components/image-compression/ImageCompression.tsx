@@ -3,6 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   CircleDashed,
   FolderOpen,
@@ -15,9 +16,10 @@ import {
   Trash2,
   UploadCloud,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -35,6 +37,7 @@ import {
 } from "@/services/image";
 import type { ThemePreference } from "@/services/config";
 import { ShenDeskIpcError } from "@/services/tauri";
+import { cn } from "@/lib/utils";
 
 type FileStatus = "pending" | CompressionStatus;
 
@@ -266,10 +269,24 @@ export function ImageCompression({
       <div className="mx-auto max-w-5xl space-y-6">
         <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
+            <Link
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                "mb-3 h-11 touch-manipulation gap-2 px-3",
+              )}
+              to="/workspace"
+            >
+              <ArrowLeft aria-hidden="true" className="size-4" />
+              返回工作台
+            </Link>
             <p className="text-sm font-medium tracking-wide text-muted-foreground">
               ShenDesk · 本地工具
             </p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+            <h1
+              className="mt-1 rounded-sm text-3xl font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              data-route-heading
+              tabIndex={-1}
+            >
               图片压缩
             </h1>
             <p className="mt-2 text-base text-muted-foreground">
@@ -281,11 +298,11 @@ export function ImageCompression({
               欢迎回来，
               <span className="font-medium text-foreground">{displayName}</span>
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 aria-expanded={isSettingsOpen}
                 aria-controls="appearance-settings"
-                className="gap-2"
+                className="h-11 touch-manipulation gap-2"
                 onClick={() => setIsSettingsOpen((open) => !open)}
                 size="sm"
                 type="button"
@@ -296,6 +313,7 @@ export function ImageCompression({
               </Button>
               {onLogout && (
                 <Button
+                  className="h-11 touch-manipulation"
                   disabled={isLoggingOut || isCompressing}
                   onClick={onLogout}
                   size="sm"
@@ -326,19 +344,18 @@ export function ImageCompression({
               <div
                 aria-label="主题"
                 className="grid gap-3 sm:grid-cols-3"
-                role="radiogroup"
+                role="group"
               >
                 {THEME_OPTIONS.map((option) => {
                   const Icon = option.icon;
                   const selected = theme === option.value;
                   return (
                     <Button
-                      aria-checked={selected}
-                      className="min-h-11 gap-2"
+                      aria-pressed={selected}
+                      className="min-h-11 touch-manipulation gap-2"
                       disabled={isSavingTheme}
                       key={option.value}
                       onClick={() => onThemeChange?.(option.value)}
-                      role="radio"
                       size="lg"
                       variant={selected ? "default" : "outline"}
                     >
@@ -348,6 +365,12 @@ export function ImageCompression({
                   );
                 })}
               </div>
+              <p
+                aria-live="polite"
+                className="mt-3 min-h-5 text-sm text-muted-foreground"
+              >
+                {isSavingTheme ? "正在保存主题设置…" : ""}
+              </p>
             </CardContent>
           </Card>
         )}

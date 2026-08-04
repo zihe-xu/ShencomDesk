@@ -8,9 +8,10 @@ import {
   ShieldCheck,
   Sun,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import logoUrl from "../../app-icons/logo-macos.svg";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -19,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { ThemePreference } from "@/services/config";
+import { cn } from "@/lib/utils";
 
 interface WorkspaceProps {
   displayName: string;
@@ -26,7 +28,6 @@ interface WorkspaceProps {
   isLoggingOut?: boolean;
   isSavingTheme?: boolean;
   onLogout: () => void;
-  onOpenImageCompression: () => void;
   onThemeChange: (theme: ThemePreference) => void;
   theme: ThemePreference;
 }
@@ -47,7 +48,6 @@ export function Workspace({
   isLoggingOut = false,
   isSavingTheme = false,
   onLogout,
-  onOpenImageCompression,
   onThemeChange,
   theme,
 }: WorkspaceProps) {
@@ -69,7 +69,13 @@ export function Workspace({
               <p className="text-sm font-medium tracking-wide text-muted-foreground">
                 ShenDesk
               </p>
-              <h1 className="text-xl font-semibold tracking-tight">工作台</h1>
+              <h1
+                className="rounded-sm text-xl font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-route-heading
+                tabIndex={-1}
+              >
+                工作台
+              </h1>
             </div>
           </div>
 
@@ -204,16 +210,16 @@ export function Workspace({
                 <ShieldCheck aria-hidden="true" className="size-4 flex-none" />
                 所有图片仅在本机处理
               </p>
-              <Button
-                className="h-11 w-full touch-manipulation gap-2 sm:w-auto"
-                disabled={isLoggingOut}
-                onClick={onOpenImageCompression}
-                size="lg"
-                type="button"
+              <Link
+                className={cn(
+                  buttonVariants({ size: "lg" }),
+                  "h-11 w-full touch-manipulation gap-2 sm:w-auto",
+                )}
+                to="/tools/image-compression"
               >
                 <ImageIcon aria-hidden="true" className="size-4" />
                 打开工具
-              </Button>
+              </Link>
             </CardContent>
           </Card>
         </section>
