@@ -6,6 +6,7 @@ pub mod config_service;
 pub mod event_bus;
 pub mod file_service;
 pub mod image_service;
+pub mod office_service;
 pub mod plugin_service;
 pub mod task_service;
 pub mod update_service;

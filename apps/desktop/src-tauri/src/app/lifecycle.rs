@@ -32,6 +32,11 @@ pub fn on_exit(app: &AppHandle) {
     let state = app.state::<AppState>();
     state.event_bus().publish(AppEvent::ApplicationExiting);
 
+    let stopped_office_resources =
+        tauri::async_runtime::block_on(state.office_service().shutdown());
+    tracing::info!(stopped_office_resources, "Office service stopped");
+    logging::record_operation("office_service.shutdown", "success");
+
     // Plugin hooks run before shared file and task services are stopped. ABI v1
     // has no host imports, but this ordering preserves room for future explicit capabilities.
     let stopped_plugins = state.plugin_service().shutdown();

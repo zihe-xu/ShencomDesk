@@ -8,6 +8,7 @@ use crate::application::{
     event_bus::EventBus,
     file_service::{FileRepository, FileService},
     image_service::{ImageProcessor, ImageService},
+    office_service::{OfficeRuntime, OfficeService},
     plugin_service::{PluginRepository, PluginRuntime, PluginService},
     task_service::TaskManager,
     update_service::{UpdateBackend, UpdateService},
@@ -22,14 +23,19 @@ pub struct AppState {
     auth_service: AuthService,
     file_service: FileService,
     image_service: ImageService,
+    office_service: OfficeService,
     plugin_service: PluginService,
     update_service: UpdateService,
 }
 
 impl AppState {
+    // This is the composition root for application ports; keeping its explicit
+    // dependency list avoids introducing a container solely to satisfy a lint.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         file_repository: Arc<dyn FileRepository>,
         image_processor: Arc<dyn ImageProcessor>,
+        office_runtime: Arc<dyn OfficeRuntime>,
         plugin_repository: Arc<dyn PluginRepository>,
         plugin_runtime: Arc<dyn PluginRuntime>,
         update_backend: Arc<dyn UpdateBackend>,
@@ -41,6 +47,7 @@ impl AppState {
         let auth_service = AuthService::new(auth_backend, auth_session_store, event_bus.clone())?;
         let file_service = FileService::new(file_repository, event_bus.clone());
         let image_service = ImageService::new(image_processor);
+        let office_service = OfficeService::new(office_runtime);
         let plugin_service =
             PluginService::new(plugin_repository, plugin_runtime, event_bus.clone());
         let update_service = UpdateService::new(update_backend, event_bus.clone());
@@ -52,6 +59,7 @@ impl AppState {
             auth_service,
             file_service,
             image_service,
+            office_service,
             plugin_service,
             update_service,
         })
@@ -81,6 +89,10 @@ impl AppState {
         &self.image_service
     }
 
+    pub fn office_service(&self) -> &OfficeService {
+        &self.office_service
+    }
+
     pub fn plugin_service(&self) -> &PluginService {
         &self.plugin_service
     }
@@ -102,11 +114,15 @@ mod tests {
     use crate::{
         application::{
             auth_service::{AuthBackendResponse, AuthSessionStore, RefreshBackendResponse},
+            office_service::{OfficeCancellationToken, OfficeRuntime, OfficeRuntimeError},
             update_service::{UpdateProgressHandler, UpdateServiceError, UpdateServiceErrorKind},
         },
         domain::{
             auth::{AccessToken, LoginRequest},
             event::EventKind,
+            office::{
+                OfficeDocument, OfficeEngineStatus, OfficeLifecycleOperation, OfficeOperationResult,
+            },
             update::UpdateInfo,
         },
         infrastructure::{
@@ -126,6 +142,37 @@ mod tests {
 
     #[derive(Debug, Default)]
     struct NoopAuthSessionStore;
+
+    #[derive(Debug, Default)]
+    struct NoopOfficeRuntime;
+
+    #[async_trait]
+    impl OfficeRuntime for NoopOfficeRuntime {
+        async fn probe(&self) -> Result<OfficeEngineStatus, OfficeRuntimeError> {
+            Ok(OfficeEngineStatus::unavailable())
+        }
+
+        async fn open(
+            &self,
+            _document: &OfficeDocument,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<OfficeOperationResult, OfficeRuntimeError> {
+            Ok(OfficeOperationResult::opened(true))
+        }
+
+        async fn close(
+            &self,
+            _document: &OfficeDocument,
+        ) -> Result<OfficeOperationResult, OfficeRuntimeError> {
+            Ok(OfficeOperationResult::succeeded(
+                OfficeLifecycleOperation::Close,
+            ))
+        }
+
+        fn cancel_all(&self) -> usize {
+            0
+        }
+    }
 
     #[async_trait]
     impl AuthBackend for NoopAuthBackend {
@@ -192,6 +239,7 @@ mod tests {
         let state = AppState::new(
             Arc::new(LocalFileRepository::default()),
             Arc::new(LocalImageProcessor),
+            Arc::new(NoopOfficeRuntime),
             Arc::new(
                 LocalPluginRepository::new(&plugin_root)
                     .expect("plugin repository should initialize"),
