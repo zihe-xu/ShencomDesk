@@ -115,6 +115,8 @@ recording runtime，不依赖真实 OfficeCLI。`OfficeCliRuntime` 位于
 Infrastructure，只解析应用包内的固定 sidecar，并负责受限进程执行、输出
 上限、超时、取消、退出状态与 JSON 校验。
 
-当前不提供 Office Tauri Command；WebView 无法传入二进制路径、环境变量或
-原始 argv。具体创建、读取、batch 修改和预览业务操作由后续 Office 用例在
-这个 port 上增加类型化方法。
+`commands::office` 当前提供类型化的引擎状态查询和 owned document close，
+close 通过阶段 Channel 报告进度。React 只通过 `src/services/office.ts` 调用，
+请求无法传入二进制路径、环境变量或原始 argv。具体创建、读取、batch 修改
+和预览业务操作由后续 Office 用例在这个 port 上增加类型化方法；不存在通用
+OfficeCLI 命令执行 IPC。

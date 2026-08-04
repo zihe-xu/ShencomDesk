@@ -35,6 +35,13 @@ ShenDesk 使用 Tauri 2 的 CSP、Permissions 与 Capabilities 建立 WebView �
 - `check_for_updates`
 - `install_update`
 
+Office 当前只暴露两个类型化入口：
+
+- `get_office_engine_status`
+- `close_office_document`
+
+主窗口没有 shell plugin 权限，也不存在接受 executable、环境变量或原始 argv 的 Office IPC。
+
 WebView 不授予 `updater:*` 原生插件权限。Tauri 为这些自有命令生成对应的 allow/deny 权限。`capabilities/default.json` 只把 `allow-*` 权限授予标签为 `main` 的窗口；新增窗口默认不具备插件安装或执行权限。
 
 新增 IPC 命令时，必须同时更新：
@@ -82,6 +89,7 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - stdout/stderr 均被捕获并限制大小；超时、取消、异常退出、超量输出和无效 JSON 只返回稳定脱敏错误。
 - 日志不记录文档路径、Named Pipe、原始 stderr 或文档内容，EventBus 不发布 Office 文档生命周期细节。
 - ShenDesk 只登记并清理自己打开的 session 和自己启动的临时子进程；退出时不扫描或终止用户的 OfficeCLI 进程。
+- WebView 只接收八种稳定 Office 错误码和固定用户消息；绝对路径、临时目录、Named Pipe、原始 stderr 与文档内容不会进入 IPC 错误或进度 Channel。
 
 ## WASM 插件沙箱
 

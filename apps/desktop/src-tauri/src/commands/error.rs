@@ -5,6 +5,7 @@ use crate::{
         auth_service::{AuthServiceError, AuthServiceErrorKind},
         file_service::{FileServiceError, FileServiceErrorKind},
         image_service::{ImageServiceError, ImageServiceErrorKind},
+        office_service::{OfficeServiceError, OfficeServiceErrorKind},
         plugin_service::{PluginServiceError, PluginServiceErrorKind},
         update_service::{UpdateServiceError, UpdateServiceErrorKind},
     },
@@ -35,6 +36,14 @@ pub enum IpcErrorCode {
     ImageFormatUnsupported,
     ImageOutputFailed,
     ImageOperationFailed,
+    OfficeEngineUnavailable,
+    OfficeFormatUnsupported,
+    OfficeDocumentNotFound,
+    OfficeDocumentLocked,
+    OfficeOutputConflict,
+    OfficeOperationTimeout,
+    OfficeOperationCancelled,
+    OfficeOperationFailed,
     PluginNotFound,
     PluginAlreadyInstalled,
     PluginInvalidPackage,
@@ -157,6 +166,20 @@ impl IpcError {
 
     pub fn image_operation_failed() -> Self {
         Self::new(IpcErrorCode::ImageOperationFailed, "图片处理失败，请重试。")
+    }
+
+    pub fn for_office_operation(error: &OfficeServiceError) -> Self {
+        let code = match error.kind() {
+            OfficeServiceErrorKind::EngineUnavailable => IpcErrorCode::OfficeEngineUnavailable,
+            OfficeServiceErrorKind::FormatUnsupported => IpcErrorCode::OfficeFormatUnsupported,
+            OfficeServiceErrorKind::DocumentNotFound => IpcErrorCode::OfficeDocumentNotFound,
+            OfficeServiceErrorKind::DocumentLocked => IpcErrorCode::OfficeDocumentLocked,
+            OfficeServiceErrorKind::OutputConflict => IpcErrorCode::OfficeOutputConflict,
+            OfficeServiceErrorKind::Timeout => IpcErrorCode::OfficeOperationTimeout,
+            OfficeServiceErrorKind::Cancelled => IpcErrorCode::OfficeOperationCancelled,
+            OfficeServiceErrorKind::OperationFailed => IpcErrorCode::OfficeOperationFailed,
+        };
+        Self::new(code, error.safe_message())
     }
 
     pub fn for_plugin_operation(error: &PluginServiceError) -> Self {

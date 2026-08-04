@@ -23,6 +23,8 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `stop_file_watch` | `{ watchId: string }` | watch ID |
 | `clear_file_cache` | 无 | 无 |
 | `compress_images` | `{ request: { items, outputDir, quality }, onProgress: Channel }` | `CompressImagesResult` |
+| `get_office_engine_status` | 无 | `OfficeEngineStatus` |
+| `close_office_document` | `{ request: { path }, onProgress: Channel }` | `{ succeeded }` |
 | `install_plugin` | `{ request: { manifestPath } }` | `PluginSnapshot` |
 | `list_plugins` | 无 | `PluginSnapshot[]` |
 | `get_plugin` | `{ pluginId }` | `PluginSnapshot` |
@@ -50,6 +52,8 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 `AuthState` 只包含 `authenticated`、用户资料和过期时间，不包含 Access Token 或 Refresh Token。登录成功后 Token 只保留在 Rust Core 和系统凭据库中。
 
 图片压缩 Command 把阻塞工作交给 worker，并通过 `Channel<CompressionProgress>` 依次发送每张图片的 `processing` 和终态事件。`ImageService` 串行调度批次，`LocalImageProcessor` 使用 `image` 重编码 JPEG、使用 `oxipng` 无损优化 PNG。质量参数范围为 1–100 且只影响 JPEG。
+
+Office Command 只委托 `OfficeService`。本阶段暴露引擎状态查询和 owned document close；close 通过 `Channel<OfficeProgress>` 发送 `closing`、`completed` 阶段。请求只包含类型化业务字段，不接受二进制路径、环境变量或原始 argv。创建、读取、batch 修改和 PNG 预览在对应 Office 文档操作用例实现后扩展同一 service，不提供通用 OfficeCLI 执行入口。
 
 ## 稳定错误协议
 
@@ -87,6 +91,14 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 | `image_format_unsupported` | 输入不是 PNG/JPEG |
 | `image_output_failed` | 输出目录不可写或同名文件已存在 |
 | `image_operation_failed` | 其他图片处理失败 |
+| `office_engine_unavailable` | 内置 Office 文档引擎缺失、无法启动或版本不匹配 |
+| `office_format_unsupported` | 文档不是受支持的 DOCX、XLSX 或 PPTX |
+| `office_document_not_found` | 指定 Office 文档不存在 |
+| `office_document_locked` | Office 文档被其他程序占用 |
+| `office_output_conflict` | 目标输出文件已经存在 |
+| `office_operation_timeout` | Office 文档操作超时 |
+| `office_operation_cancelled` | Office 文档操作已取消 |
+| `office_operation_failed` | 其他 Office 文档操作失败 |
 | `plugin_not_found` | 指定插件不存在 |
 | `plugin_already_installed` | 相同插件 ID 已安装 |
 | `plugin_invalid_package` | Manifest、模块、ABI 或沙箱校验失败 |
@@ -115,6 +127,7 @@ Rust 端把原始 `AppError`、TaskManager、文件服务、插件运行时和�
 - worker panic 或任务内部错误细节；
 - Manifest 解析位置、WASM 编译详情或 trap 文本；
 - 更新 endpoint、签名、清单、请求头和安装器内部错误。
+- Office 文档路径、临时目录、Named Pipe、原始 stderr 和文档内容。
 
 前端只接受白名单中的错误码。未知对象、原生 `Error` 或空消息都会归一化为：
 
@@ -163,9 +176,21 @@ if (update) {
 
 所有原始 `invoke` 调用集中在 `src/services/tauri.ts`。认证、配置、任务、文件、图片、插件和更新均通过 `src/services/` 中的类型安全封装调用。纯错误映射位于 `src/services/tauri-errors.ts`。
 
+Office：
+
+```ts
+const status = await getOfficeEngineStatus();
+await closeOfficeDocument(
+  { path: selectedDocumentPath },
+  (progress) => console.log(progress.stage),
+);
+```
+
+Office 调用集中在 `src/services/office.ts`，测试使用不依赖 Tauri runtime 的 `office-core.ts` 验证 command envelope 和 Channel。
+
 ## 测试
 
 CI 同时执行：
 
-- Rust：验证认证成功码、会话持久化/恢复/登出、登录/登出事件、错误映射、错误脱敏、参数边界、服务生命周期、图片请求/串行进度/JPEG 压缩与二次解码/输出不覆盖、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
-- TypeScript：验证已知认证/配置/任务/文件/图片/插件/更新错误保留、图片请求 envelope 与 Channel 回调、未知错误脱敏、空消息拒绝，并执行完整前端构建。
+- Rust：验证认证成功码、会话持久化/恢复/登出、登录/登出事件、错误映射、错误脱敏、参数边界、服务生命周期、Office envelope/camelCase/错误映射、图片请求/串行进度/JPEG 压缩与二次解码/输出不覆盖、插件 ABI、宿主 import 拒绝、资源限制、fuel trap、持久化恢复、更新串行化、可用事件和进度协议。
+- TypeScript：验证已知认证/配置/任务/文件/图片/Office/插件/更新错误保留、图片与 Office 请求 envelope、Channel 回调、Office 权限清单、未知错误脱敏、空消息拒绝，并执行完整前端构建。
