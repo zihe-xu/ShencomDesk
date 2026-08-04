@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-close-office-document"
+description = "Enables the close_office_document command without any pre-configured scope."
+commands.allow = ["close_office_document"]
+
+[[permission]]
+identifier = "deny-close-office-document"
+description = "Denies the close_office_document command without any pre-configured scope."
+commands.deny = ["close_office_document"]

@@ -100,6 +100,25 @@ test("preserves stable update errors", () => {
   assert.equal(normalized.message, "更新下载、验证或安装失败，请重试。");
 });
 
+test("preserves stable Office errors", () => {
+  const codes = [
+    "office_engine_unavailable",
+    "office_format_unsupported",
+    "office_document_not_found",
+    "office_document_locked",
+    "office_output_conflict",
+    "office_operation_timeout",
+    "office_operation_cancelled",
+    "office_operation_failed",
+  ] as const;
+
+  for (const code of codes) {
+    const normalized = normalizeIpcError({ code, message: "Office 文档操作失败。" });
+    assert.equal(normalized.code, code);
+    assert.equal(normalized.message, "Office 文档操作失败。");
+  }
+});
+
 test("redacts unknown objects and native errors", () => {
   const internalPath = "/Users/example/private/app.sqlite";
   const unknownPayload = normalizeIpcError({

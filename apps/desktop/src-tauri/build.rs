@@ -16,6 +16,8 @@ const COMMANDS: &[&str] = &[
     "stop_file_watch",
     "clear_file_cache",
     "compress_images",
+    "get_office_engine_status",
+    "close_office_document",
     "install_plugin",
     "list_plugins",
     "get_plugin",

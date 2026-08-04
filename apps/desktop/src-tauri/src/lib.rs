@@ -30,6 +30,8 @@ pub fn run() {
             crate::commands::file::stop_file_watch,
             crate::commands::file::clear_file_cache,
             crate::commands::image::compress_images,
+            crate::commands::office::get_office_engine_status,
+            crate::commands::office::close_office_document,
             crate::commands::plugin::install_plugin,
             crate::commands::plugin::list_plugins,
             crate::commands::plugin::get_plugin,

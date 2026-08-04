@@ -6,6 +6,7 @@ pub mod error;
 pub mod file;
 pub mod health;
 pub mod image;
+pub mod office;
 pub mod plugin;
 pub mod task;
 pub mod update;
