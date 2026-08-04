@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Login } from "@/components/Login";
+import { Workspace } from "@/components/Workspace";
 import { ImageCompression } from "@/components/image-compression/ImageCompression";
 import { Toaster } from "@/components/ui/sonner";
 import { getAuthState, logout, type AuthState } from "@/services/auth";
@@ -29,6 +30,9 @@ function displayNameFrom(state: AuthState): string | null {
 
 function App() {
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"workspace" | "image-compression">(
+    "workspace",
+  );
   const [isRestoring, setIsRestoring] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isSavingTheme, setIsSavingTheme] = useState(false);
@@ -94,6 +98,7 @@ function App() {
     try {
       const state = await logout();
       setDisplayName(displayNameFrom(state));
+      setActiveView("workspace");
     } catch (requestError: unknown) {
       setError(formatAuthError(requestError));
     } finally {
@@ -141,17 +146,35 @@ function App() {
   return (
     <>
       {displayName ? (
-        <ImageCompression
-          displayName={displayName}
-          error={error}
-          isLoggingOut={isLoggingOut}
-          isSavingTheme={isSavingTheme}
-          onLogout={() => void handleLogout()}
-          onThemeChange={(theme) => void handleThemeChange(theme)}
-          theme={config.theme}
-        />
+        activeView === "workspace" ? (
+          <Workspace
+            displayName={displayName}
+            error={error}
+            isLoggingOut={isLoggingOut}
+            isSavingTheme={isSavingTheme}
+            onLogout={() => void handleLogout()}
+            onOpenImageCompression={() => setActiveView("image-compression")}
+            onThemeChange={(theme) => void handleThemeChange(theme)}
+            theme={config.theme}
+          />
+        ) : (
+          <ImageCompression
+            displayName={displayName}
+            error={error}
+            isLoggingOut={isLoggingOut}
+            isSavingTheme={isSavingTheme}
+            onLogout={() => void handleLogout()}
+            onThemeChange={(theme) => void handleThemeChange(theme)}
+            theme={config.theme}
+          />
+        )
       ) : (
-        <Login onSuccess={setDisplayName} />
+        <Login
+          onSuccess={(name) => {
+            setDisplayName(name);
+            setActiveView("workspace");
+          }}
+        />
       )}
       <Toaster />
     </>
