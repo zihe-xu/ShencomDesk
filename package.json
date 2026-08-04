@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @shendesk/desktop run dev",
     "build": "pnpm --filter @shendesk/desktop run build",
-    "test": "pnpm --filter @shendesk/desktop run test && node --test .github/scripts/resolve-post-merge-build.test.mjs .github/scripts/validate-release.test.mjs scripts/build-officecli.test.mjs",
+    "test": "pnpm --filter @shendesk/desktop run test && node --test .github/scripts/resolve-post-merge-build.test.mjs .github/scripts/validate-release.test.mjs .github/scripts/verify-officecli-install.test.mjs scripts/build-officecli.test.mjs",
     "officecli:build": "node scripts/build-officecli.mjs",
     "preview": "pnpm --filter @shendesk/desktop run preview",
     "tauri": "pnpm --filter @shendesk/desktop run tauri"

@@ -117,12 +117,15 @@ test("keeps updater artifact generation release-only", () => {
 });
 
 test("release workflow is tag-only and minimizes signing-key exposure", async () => {
-  const [workflow, macosBuildScript] = await Promise.all([
+  const [workflow, macosBuildScript, installVerifier, windowsBuildScript, windowsVerifier] = await Promise.all([
     readFile(new URL("../workflows/release.yml", import.meta.url), "utf8"),
     readFile(
       new URL("./build-verify-macos-release.sh", import.meta.url),
       "utf8",
     ),
+    readFile(new URL("./verify-officecli-install.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./build-verify-windows-release.cmd", import.meta.url), "utf8"),
+    readFile(new URL("./verify-officecli-windows-msi.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
@@ -184,10 +187,10 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     /target: (?:aarch64|x86_64)-apple-darwin --bundles dmg(?:\s|$)/,
   );
   const macosBuildStep = workflow.match(
-    /- name: Build, verify, and upload macOS release assets[\s\S]*?(?=\n\s+- name: Build, sign, and upload Windows)/,
+    /- name: Build, verify, and upload macOS release assets[\s\S]*?(?=\n\s+- name: Build, install, verify, and upload Windows)/,
   )?.[0];
   const windowsBuildStep = workflow.match(
-    /- name: Build, sign, and upload Windows updater release assets[\s\S]*$/,
+    /- name: Build, install, verify, and upload Windows release assets[\s\S]*$/,
   )?.[0];
   assert.ok(macosBuildStep);
   assert.ok(windowsBuildStep);
@@ -219,12 +222,26 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
   assert.match(macosBuildScript, /Contents\/MacOS\/officecli/);
   assert.match(macosBuildScript, /OfficeCLI is not signed with a Developer ID Application certificate/);
   assert.match(macosBuildScript, /com\.apple\.security\.cs\.allow-jit/);
+  assert.match(macosBuildScript, /OfficeCLI sidecar is missing com\.apple\.security\.cs\.allow-jit/);
   assert.match(macosBuildScript, /PlistBuddy/);
-  assert.match(macosBuildScript, /lipo -archs/);
-  assert.match(macosBuildScript, /OFFICECLI_SKIP_UPDATE=1/);
+  assert.match(macosBuildScript, /verify-officecli-install\.mjs/);
+  assert.match(installVerifier, /OFFICECLI_SKIP_UPDATE: "1"/);
+  assert.match(installVerifier, /lipo", \["-archs"/);
+  assert.match(installVerifier, /versions\.length !== 1 \|\| versions\[0\] !== expectedVersion/);
   for (const command of ["--version", "create", "open", "add", "get", "close"]) {
-    assert.match(macosBuildScript, new RegExp(`officecli_path\\\" ${command}`));
+    assert.match(installVerifier, new RegExp(`\\[\"${command}\"`));
   }
+  for (const legalFile of ["LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"]) {
+    assert.match(installVerifier, /manifest\.licenseFiles/);
+    assert.match(
+      await readFile(new URL("../../third_party/officecli/version.json", import.meta.url), "utf8"),
+      new RegExp(legalFile.replaceAll(".", "\\.")),
+    );
+  }
+  assert.match(windowsBuildStep, /build-verify-windows-release\.cmd/);
+  assert.match(windowsBuildScript, /verify-officecli-windows-msi\.mjs/);
+  assert.match(windowsBuildScript, /pnpm run tauri %\*/);
+  assert.match(windowsVerifier, /findSingleMsi\(resolve\(msiDirectory\)\)/);
   assert.ok(
     macosBuildScript.indexOf('pnpm run tauri "$@"') <
       macosBuildScript.indexOf("codesign --verify --deep --strict"),

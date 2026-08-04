@@ -4,9 +4,9 @@
 
 仓库将质量验证、合并后诊断构建和正式签名发布拆成三个独立流程：
 
-- `CI`：Pull Request 和 `main` 的前端测试、前端构建、Rust 格式检查、Clippy 与 Rust 测试。
-- `Post-merge desktop build`：代码进入 `main` 后生成 macOS、Windows 安装包并上传短期 Artifact。
-- `Signed desktop release`：版本标签触发，使用受保护密钥生成 Tauri Updater 签名、`latest.json` 和 Draft GitHub Release。
+- `CI`：Pull Request 和 `main` 的前端/Rust fake-runtime 测试、构建脚本测试，以及固定 macOS ARM64 目标的 OfficeCLI 源码编译。
+- `Post-merge desktop build`：代码进入 `main` 后生成 macOS、Windows 安装包，从最终 App/MSI 验证 OfficeCLI 后上传短期 Artifact。
+- `Signed desktop release`：版本标签触发，从最终安装产物完成验收，再使用受保护密钥生成 Tauri Updater 签名、`latest.json` 和 Draft GitHub Release。
 
 普通构建不读取发布密钥；只有标签发布的 release Job 具有 `contents: write` 和签名 Secret。
 
@@ -25,7 +25,7 @@
 
 `.github/workflows/build.yml` 使用原生 GitHub-hosted Runner：
 
-- macOS：`macos-latest`，生成 `.app` 与 `.dmg`。
+- macOS：固定 `macos-26` ARM64 Runner，生成 `.app` 与 `.dmg`。
 - Windows：固定 `windows-2022` 与 Visual Studio 2022，生成 `.msi` 与 NSIS `.exe`。
 
 Windows Runner 不使用滚动的 `windows-latest` 标签，避免 GitHub 切换默认 Windows / Visual Studio 镜像时未经评估地改变生产构建环境。升级 Runner 必须通过独立 PR 和真实打包验证。
@@ -38,6 +38,15 @@ shendesk-windows-<short-sha>
 ```
 
 Artifact 保留 14 天。找不到预期安装包时上传步骤失败，避免“Workflow 成功但没有产物”的假成功。
+
+两个 Runner 都安装清单固定的 .NET SDK `10.0.302`，从固定 commit、SHA-256 与 NuGet lock 源码构建对应原生 sidecar。macOS 最终 `.app` 和 Windows MSI 静默安装目录必须通过以下门槛后才能上传：
+
+- sidecar 存在且架构分别为 ARM64、x64；
+- `--version` 中唯一 SemVer token 与 `third_party/officecli/version.json` 完全相等；
+- DOCX `create → open → add → get → close` round trip 成功；
+- `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.txt` 位于最终包的 `officecli-licenses` 资源目录。
+
+所有 smoke 子进程都设置 `OFFICECLI_SKIP_UPDATE=1`。任一检查失败时不上传正常构建 Artifact；原有 `tauri-build.log` 仍作为失败诊断 Artifact 保留 7 天。
 
 ## 构建诊断
 
@@ -75,7 +84,7 @@ shendesk-<platform>-<short-sha>-diagnostics
 | macOS Intel | `macos-26-intel` | Developer ID 签名并公证的 DMG | `.app.tar.gz` + `.sig` |
 | Windows x64 | `windows-2022` | MSI | `.msi` + `.sig` |
 
-`tauri-apps/tauri-action` 将平台资产和 `latest.json` 上传到同一 Draft Release。macOS 构建后还会使用 `codesign`、`stapler` 和 Gatekeeper `spctl` 验证 Developer ID 签名、公证票据和系统信任判定；任一步失败都会使发布失败。Draft 必须在人工核验后发布，发布后客户端固定的 `/releases/latest/download/latest.json` 才能发现它。
+`tauri-apps/tauri-action` 将平台资产和 `latest.json` 上传到同一 Draft Release。macOS ARM64/x64 最终 App 在上传前验证原生架构、精确版本、法律文件和文档 round trip，并使用 `codesign` 检查 App/sidecar Developer ID 签名及 sidecar `allow-jit` entitlement，再通过 `stapler` 和 Gatekeeper `spctl` 验证公证票据和系统信任。Windows x64 MSI 在上传前静默安装到隔离目录，并对安装后的 sidecar 执行相同版本、法律文件和文档检查。任一步失败时 `tauri-action` 尚未上传该平台资产，因此失败资产不会进入可发布 Draft。Draft 必须在人工核验后发布，发布后客户端固定的 `/releases/latest/download/latest.json` 才能发现它。
 
 Updater 签名使用：
 
@@ -132,8 +141,9 @@ pnpm test
 ```bash
 node --test .github/scripts/resolve-post-merge-build.test.mjs
 node --test .github/scripts/validate-release.test.mjs
+node --test .github/scripts/verify-officecli-install.test.mjs
 ```
 
-测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Windows Runner、发布版本漂移、错误标签、缺失 Updater 或 Apple 签名材料、release-only updater artifacts、发布 Workflow 的 tag-only/Secret 边界、macOS 签名/公证验收命令，以及 ARM/Intel 原生 macOS Runner 约束。
+测试覆盖普通合并、`skip-build`、未合并关闭、手动构建、缺失 merge SHA 安全失败、固定 Runner/.NET/OfficeCLI target、源码清单与哈希失败、发布版本漂移、错误标签、缺失 Updater 或 Apple 签名材料、release-only updater artifacts、发布 Workflow 的 tag-only/Secret 边界、macOS 签名/公证验收、Windows 安装后验收、精确版本/架构/法律文件与 smoke 失败路径。
 
 Workflow 合并后，应通过 `workflow_dispatch` 验证普通 macOS/Windows 打包；首次签名发布则在配置密钥后使用新的 SemVer 标签，并在 Draft Release 中核对所有平台资产与 `latest.json`。

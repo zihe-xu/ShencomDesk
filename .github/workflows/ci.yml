@@ -16,6 +16,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  officecli:
+    name: OfficeCLI source build
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+
+      - name: Set up pinned .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate OfficeCLI manifest and build scripts
+        run: node --test scripts/build-officecli.test.mjs .github/scripts/verify-officecli-install.test.mjs
+
+      - name: Compile pinned OfficeCLI source
+        run: pnpm officecli:build -- --target aarch64-apple-darwin
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest

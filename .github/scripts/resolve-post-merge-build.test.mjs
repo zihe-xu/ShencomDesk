@@ -122,6 +122,19 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
   assert.match(workflow, /run-tauri-build\.mjs/);
   assert.match(workflow, /Upload failed build diagnostics/);
   assert.match(workflow, /retention-days:\s+7/);
+  assert.match(workflow, /Verify bundled OfficeCLI in macOS app/);
+  assert.match(workflow, /--expected-arch arm64/);
+  assert.match(workflow, /Install MSI and verify bundled OfficeCLI/);
+  assert.match(workflow, /verify-officecli-windows-msi\.mjs/);
+});
+
+test("ordinary CI validates and compiles pinned OfficeCLI source", () => {
+  const workflow = readFileSync(new URL("../workflows/ci.yml", import.meta.url), "utf8");
+
+  assert.match(workflow, /runs-on: macos-26/);
+  assert.match(workflow, /dotnet-version: 10\.0\.302/);
+  assert.match(workflow, /scripts\/build-officecli\.test\.mjs/);
+  assert.match(workflow, /officecli:build -- --target aarch64-apple-darwin/);
 });
 
 test("platform configs declare generated installer icons", () => {

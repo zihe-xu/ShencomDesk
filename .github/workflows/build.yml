@@ -123,6 +123,18 @@ jobs:
         working-directory: apps/desktop
         run: node ../../.github/scripts/run-tauri-build.mjs
 
+      - name: Verify bundled OfficeCLI in macOS app
+        if: runner.os == 'macOS'
+        run: >-
+          node .github/scripts/verify-officecli-install.mjs
+          --root apps/desktop/src-tauri/target/release/bundle/macos/ShenDesk.app/Contents/MacOS
+          --resources apps/desktop/src-tauri/target/release/bundle/macos/ShenDesk.app/Contents/Resources
+          --expected-arch arm64
+
+      - name: Install MSI and verify bundled OfficeCLI
+        if: runner.os == 'Windows'
+        run: node .github/scripts/verify-officecli-windows-msi.mjs apps/desktop/src-tauri/target/release/bundle/msi
+
       - name: Upload failed build diagnostics
         id: diagnostics
         if: failure()

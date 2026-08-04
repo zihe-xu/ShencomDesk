@@ -25,16 +25,9 @@ if [[ ! -f "$officecli_path" ]]; then
 fi
 
 entitlements_path="$(mktemp "${RUNNER_TEMP:-/tmp}/officecli-entitlements.XXXXXX")"
-smoke_directory="$(mktemp -d "${RUNNER_TEMP:-/tmp}/officecli-smoke.XXXXXX")"
-smoke_document="$smoke_directory/signed-release-smoke.docx"
-resident_open=false
 
 cleanup() {
-  if [[ "$resident_open" == "true" ]]; then
-    OFFICECLI_SKIP_UPDATE=1 "$officecli_path" close "$smoke_document" >/dev/null 2>&1 || true
-  fi
   rm -f "$entitlements_path"
-  rm -rf "$smoke_directory"
 }
 trap cleanup EXIT
 
@@ -58,35 +51,10 @@ if [[ "$allow_jit" != "true" ]]; then
   exit 1
 fi
 
-officecli_archs="$(lipo -archs "$officecli_path")"
-if [[ "$officecli_archs" != "$OFFICECLI_EXPECTED_ARCH" ]]; then
-  echo "::error::OfficeCLI architecture is $officecli_archs; expected $OFFICECLI_EXPECTED_ARCH"
-  exit 1
-fi
-
-expected_version="$(node -e 'const manifest = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(manifest.tag.replace(/^v/, ""));' "$GITHUB_WORKSPACE/third_party/officecli/version.json")"
-version_output="$(OFFICECLI_SKIP_UPDATE=1 "$officecli_path" --version)"
-if [[ "$version_output" != *"$expected_version"* ]]; then
-  echo "::error::OfficeCLI version output does not contain pinned version $expected_version"
-  exit 1
-fi
-
-smoke_marker="ShenDesk signed OfficeCLI smoke test"
-OFFICECLI_SKIP_UPDATE=1 "$officecli_path" create "$smoke_document"
-OFFICECLI_SKIP_UPDATE=1 "$officecli_path" open "$smoke_document"
-resident_open=true
-OFFICECLI_SKIP_UPDATE=1 "$officecli_path" add "$smoke_document" /body --type paragraph --prop "text=$smoke_marker"
-read_output="$(OFFICECLI_SKIP_UPDATE=1 "$officecli_path" get "$smoke_document" '/body/p[last()]' --json)"
-if [[ "$read_output" != *"$smoke_marker"* ]]; then
-  echo "::error::OfficeCLI could not read back the smoke-test content"
-  exit 1
-fi
-OFFICECLI_SKIP_UPDATE=1 "$officecli_path" close "$smoke_document"
-resident_open=false
-if [[ ! -s "$smoke_document" ]]; then
-  echo "::error::OfficeCLI did not persist the smoke-test document"
-  exit 1
-fi
+node "$GITHUB_WORKSPACE/.github/scripts/verify-officecli-install.mjs" \
+  --root "$MACOS_APP_PATH/Contents/MacOS" \
+  --resources "$MACOS_APP_PATH/Contents/Resources" \
+  --expected-arch "$OFFICECLI_EXPECTED_ARCH"
 
 xcrun stapler validate "$MACOS_APP_PATH"
 spctl --assess --type execute --verbose=2 "$MACOS_APP_PATH"
