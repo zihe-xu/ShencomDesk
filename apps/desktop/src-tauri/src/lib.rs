@@ -7,6 +7,8 @@ pub mod utils;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::env::set_var("OFFICECLI_SKIP_UPDATE", "1");
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(crate::app::bootstrap::initialize)

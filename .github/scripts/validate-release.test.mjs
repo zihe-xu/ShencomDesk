@@ -206,7 +206,37 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
   );
   assert.match(workflow, /xcrun stapler validate/);
   assert.match(workflow, /spctl --assess --type execute/);
+  assert.match(workflow, /Contents\/MacOS\/officecli/);
+  assert.match(workflow, /OfficeCLI is not signed with a Developer ID Application certificate/);
+  assert.match(workflow, /com\.apple\.security\.cs\.allow-jit/);
+  assert.match(workflow, /PlistBuddy/);
   assert.match(workflow, /releaseDraft: true/);
+});
+
+test("macOS release signs OfficeCLI with its required allow-jit entitlement", async () => {
+  const [releaseConfigText, entitlements] = await Promise.all([
+    readFile(
+      new URL(
+        "../../apps/desktop/src-tauri/tauri.release.conf.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    readFile(
+      new URL(
+        "../../apps/desktop/src-tauri/officecli.entitlements",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ]);
+
+  const releaseConfig = JSON.parse(releaseConfigText);
+  assert.equal(
+    releaseConfig.bundle.macOS.entitlements,
+    "officecli.entitlements",
+  );
+  assert.match(entitlements, /<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/);
 });
 
 test("runtime updater boundary remains signed, HTTPS-only, and least-privilege", async () => {

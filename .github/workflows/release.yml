@@ -90,6 +90,11 @@ jobs:
           node-version: 22.12.0
           cache: pnpm
 
+      - name: Set up pinned .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
       - name: Set up Rust target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -103,6 +108,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build pinned OfficeCLI sidecar
+        run: pnpm officecli:build -- --target ${{ matrix.target }}
 
       - name: Generate macOS application icons
         if: runner.os == 'macOS'
@@ -146,9 +154,16 @@ jobs:
         working-directory: apps/desktop
         env:
           MACOS_APP_PATH: src-tauri/target/${{ matrix.target }}/release/bundle/macos/ShenDesk.app
+          OFFICECLI_ENTITLEMENTS_PATH: ${{ runner.temp }}/officecli-entitlements.plist
         run: |
           if [[ ! -d "$MACOS_APP_PATH" ]]; then
             echo "::error::Expected macOS application bundle was not generated"
+            exit 1
+          fi
+
+          OFFICECLI_PATH="$MACOS_APP_PATH/Contents/MacOS/officecli"
+          if [[ ! -f "$OFFICECLI_PATH" ]]; then
+            echo "::error::Expected OfficeCLI sidecar was not bundled"
             exit 1
           fi
 
@@ -156,6 +171,19 @@ jobs:
           signature_details="$(codesign -dvvv "$MACOS_APP_PATH" 2>&1)"
           if [[ "$signature_details" != *"Authority=Developer ID Application:"* ]]; then
             echo "::error::Application is not signed with a Developer ID Application certificate"
+            exit 1
+          fi
+
+          codesign --verify --strict --verbose=2 "$OFFICECLI_PATH"
+          officecli_signature_details="$(codesign -dvvv "$OFFICECLI_PATH" 2>&1)"
+          if [[ "$officecli_signature_details" != *"Authority=Developer ID Application:"* ]]; then
+            echo "::error::OfficeCLI is not signed with a Developer ID Application certificate"
+            exit 1
+          fi
+          codesign -d --entitlements - --xml "$OFFICECLI_PATH" > "$OFFICECLI_ENTITLEMENTS_PATH"
+          allow_jit="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.allow-jit' "$OFFICECLI_ENTITLEMENTS_PATH")"
+          if [[ "$allow_jit" != "true" ]]; then
+            echo "::error::OfficeCLI sidecar is missing com.apple.security.cs.allow-jit"
             exit 1
           fi
 
