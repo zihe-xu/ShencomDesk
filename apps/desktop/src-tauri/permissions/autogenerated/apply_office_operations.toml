@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-apply-office-operations"
+description = "Enables the apply_office_operations command without any pre-configured scope."
+commands.allow = ["apply_office_operations"]
+
+[[permission]]
+identifier = "deny-apply-office-operations"
+description = "Denies the apply_office_operations command without any pre-configured scope."
+commands.deny = ["apply_office_operations"]

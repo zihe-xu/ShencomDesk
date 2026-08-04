@@ -115,8 +115,10 @@ recording runtime，不依赖真实 OfficeCLI。`OfficeCliRuntime` 位于
 Infrastructure，只解析应用包内的固定 sidecar，并负责受限进程执行、输出
 上限、超时、取消、退出状态与 JSON 校验。
 
-`commands::office` 当前提供类型化的引擎状态查询和 owned document close，
-close 通过阶段 Channel 报告进度。React 只通过 `src/services/office.ts` 调用，
-请求无法传入二进制路径、环境变量或原始 argv。具体创建、读取、batch 修改
-和预览业务操作由后续 Office 用例在这个 port 上增加类型化方法；不存在通用
-OfficeCLI 命令执行 IPC。
+`commands::office` 提供类型化的引擎状态、创建、结构化读取、白名单 batch、
+PNG 预览和 owned document close，并通过阶段 Channel 报告长操作进度。创建
+在同目录 staging 中完成并 close 后以 no-clobber 方式提交；修改先复制原文件，
+只在 staging resident 成功 close 后提交到新的输出路径。预览写入单次调用的
+受管临时目录，校验 PNG 和 16 MiB 上限后返回 data URL，目录随即清理。React 只
+通过 `src/services/office.ts` 调用，请求无法传入二进制路径、环境变量、原始
+argv、任意 batch verb 或 OfficeCLI path 表达式；不存在通用执行 IPC。

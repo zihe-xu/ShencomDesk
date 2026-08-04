@@ -24,6 +24,10 @@ ShenDesk 使用 Tauri Command 作为 React 与 Rust Core 之间的薄传输边�
 | `clear_file_cache` | 无 | 无 |
 | `compress_images` | `{ request: { items, outputDir, quality }, onProgress: Channel }` | `CompressImagesResult` |
 | `get_office_engine_status` | 无 | `OfficeEngineStatus` |
+| `create_office_document` | `{ request: { path }, onProgress: Channel }` | `{ succeeded }` |
+| `inspect_office_document` | `{ request: { path }, onProgress: Channel }` | `OfficeInspection` |
+| `apply_office_operations` | `{ request: { path, outputPath, operations }, onProgress: Channel }` | `{ succeeded, operationCount }` |
+| `render_office_preview` | `{ request: { path, page? }, onProgress: Channel }` | `{ mimeType, dataUrl }` |
 | `close_office_document` | `{ request: { path }, onProgress: Channel }` | `{ succeeded }` |
 | `install_plugin` | `{ request: { manifestPath } }` | `PluginSnapshot` |
 | `list_plugins` | 无 | `PluginSnapshot[]` |
@@ -53,7 +57,7 @@ Command 可以反序列化传输参数、读取 Tauri 托管状态、验证传�
 
 图片压缩 Command 把阻塞工作交给 worker，并通过 `Channel<CompressionProgress>` 依次发送每张图片的 `processing` 和终态事件。`ImageService` 串行调度批次，`LocalImageProcessor` 使用 `image` 重编码 JPEG、使用 `oxipng` 无损优化 PNG。质量参数范围为 1–100 且只影响 JPEG。
 
-Office Command 只委托 `OfficeService`。本阶段暴露引擎状态查询和 owned document close；close 通过 `Channel<OfficeProgress>` 发送 `closing`、`completed` 阶段。请求只包含类型化业务字段，不接受二进制路径、环境变量或原始 argv。创建、读取、batch 修改和 PNG 预览在对应 Office 文档操作用例实现后扩展同一 service，不提供通用 OfficeCLI 执行入口。
+Office Command 只委托 `OfficeService`，提供引擎状态、创建、结构化读取、白名单 batch、PNG 预览和 owned document close。长操作通过 `Channel<OfficeProgress>` 发送固定阶段。batch 最多 100 项、文本合计最多 16 KiB，只接受添加 Word 段落、设置 Sheet1 单元格、添加 PowerPoint 幻灯片和文本四种类型，不接受任意命令、属性或路径表达式。修改始终写入 staging 副本，close 成功后才以不覆盖方式提交到 `outputPath`；原文件保持不变。预览文件位于单次调用的受管临时目录，读取并校验 PNG 后立即清理，只把 `image/png` data URL 返回 WebView。请求不接受二进制路径、环境变量或原始 argv，也不提供通用 OfficeCLI 执行入口。
 
 ## 稳定错误协议
 
@@ -180,13 +184,14 @@ Office：
 
 ```ts
 const status = await getOfficeEngineStatus();
-await closeOfficeDocument(
-  { path: selectedDocumentPath },
+const preview = await renderOfficePreview(
+  { path: selectedDocumentPath, page: 1 },
   (progress) => console.log(progress.stage),
 );
+// img.src = preview.dataUrl;
 ```
 
-Office 调用集中在 `src/services/office.ts`，测试使用不依赖 Tauri runtime 的 `office-core.ts` 验证 command envelope 和 Channel。
+Office 调用集中在 `src/services/office.ts`，测试使用不依赖 Tauri runtime 的 `office-core.ts` 验证 command envelope 和 Channel。PNG 通过现有 `img-src data:` CSP 下的本地 data URL 展示，不加载 OfficeCLI HTML。
 
 ## 测试
 

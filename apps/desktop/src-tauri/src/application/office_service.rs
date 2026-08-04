@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
-    fmt,
+    fmt, fs,
     future::Future,
     path::{Path, PathBuf},
     sync::{
@@ -11,11 +11,19 @@ use std::{
 };
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use serde_json::Value;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use crate::domain::office::{
-    OfficeDocument, OfficeDocumentFormat, OfficeEngineStatus, OfficeOperationResult,
+    OfficeDocument, OfficeDocumentFormat, OfficeDocumentOperation, OfficeEngineStatus,
+    OfficeInspection, OfficeOperationResult, OfficePreview,
 };
+
+const MAX_BATCH_OPERATIONS: usize = 100;
+const MAX_OPERATION_TEXT_BYTES: usize = 16 * 1024;
+const MAX_BATCH_TEXT_BYTES: usize = 16 * 1024;
+const MAX_PREVIEW_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfficeRuntimeErrorKind {
@@ -121,6 +129,33 @@ pub trait OfficeRuntime: Send + Sync {
         &self,
         document: &OfficeDocument,
     ) -> Result<OfficeOperationResult, OfficeRuntimeError>;
+
+    async fn create(
+        &self,
+        document: &OfficeDocument,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<OfficeOperationResult, OfficeRuntimeError>;
+
+    async fn inspect(
+        &self,
+        document: &OfficeDocument,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<Value, OfficeRuntimeError>;
+
+    async fn apply_batch(
+        &self,
+        document: &OfficeDocument,
+        operations: &[OfficeDocumentOperation],
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<(), OfficeRuntimeError>;
+
+    async fn render_preview(
+        &self,
+        document: &OfficeDocument,
+        page: u32,
+        output: &Path,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<(), OfficeRuntimeError>;
 
     /// Cancels only transient child processes started by this runtime.
     fn cancel_all(&self) -> usize;
@@ -245,6 +280,182 @@ impl OfficeService {
         let path_lock = self.path_lock(&document.path);
         let _guard = path_lock.lock().await;
         self.close_locked(&document).await
+    }
+
+    pub async fn create_document(
+        &self,
+        path: &Path,
+        cancellation: OfficeCancellationToken,
+    ) -> Result<OfficeOperationResult, OfficeServiceError> {
+        self.ensure_accepting()?;
+        let target = normalize_new_document(path)?;
+        let path_lock = self.path_lock(&target.path);
+        let _guard = path_lock.lock().await;
+        ensure_output_available(&target.path)?;
+
+        let staging = tempfile::Builder::new()
+            .prefix(".shendesk-office-create-")
+            .tempdir_in(target.path.parent().ok_or_else(operation_failed)?)
+            .map_err(|_| operation_failed())?;
+        let staged_document = OfficeDocument {
+            path: staging
+                .path()
+                .join(format!("document.{}", extension_for(target.format))),
+            format: target.format,
+        };
+        let staged_path_lock = self.path_lock(&staged_document.path);
+        let _staged_guard = staged_path_lock.lock().await;
+
+        let create_result = self
+            .runtime
+            .create(&staged_document, &cancellation)
+            .await
+            .map_err(OfficeServiceError::from)?;
+        if create_result.owns_session {
+            self.owned_sessions
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(staged_document.path.clone());
+        }
+        let close_result = self.close_locked(&staged_document).await;
+        if cancellation.is_cancelled() {
+            return Err(OfficeServiceError::new(OfficeServiceErrorKind::Cancelled));
+        }
+        close_result?;
+        self.ensure_accepting()?;
+        commit_staged_file(&staged_document.path, &target.path).await?;
+        Ok(create_result)
+    }
+
+    pub async fn inspect_document(
+        &self,
+        path: &Path,
+        cancellation: OfficeCancellationToken,
+    ) -> Result<OfficeInspection, OfficeServiceError> {
+        let format = normalize_document(path)?.format;
+        let structure = self
+            .with_document(
+                path,
+                cancellation,
+                |runtime, document, cancellation| async move {
+                    runtime
+                        .inspect(&document, &cancellation)
+                        .await
+                        .map_err(OfficeServiceError::from)
+                },
+            )
+            .await?;
+        Ok(OfficeInspection { format, structure })
+    }
+
+    pub async fn apply_operations(
+        &self,
+        path: &Path,
+        output_path: &Path,
+        operations: &[OfficeDocumentOperation],
+        cancellation: OfficeCancellationToken,
+    ) -> Result<OfficeOperationResult, OfficeServiceError> {
+        self.ensure_accepting()?;
+        let source = normalize_document(path)?;
+        let target = normalize_new_document(output_path)?;
+        if source.format != target.format {
+            return Err(OfficeServiceError::new(
+                OfficeServiceErrorKind::FormatUnsupported,
+            ));
+        }
+        validate_operations(source.format, operations)?;
+
+        let path_lock = self.path_lock(&source.path);
+        let _guard = path_lock.lock().await;
+        ensure_output_available(&target.path)?;
+        let staging = tempfile::Builder::new()
+            .prefix(".shendesk-office-edit-")
+            .tempdir_in(target.path.parent().ok_or_else(operation_failed)?)
+            .map_err(|_| operation_failed())?;
+        let staged_document = OfficeDocument {
+            path: staging
+                .path()
+                .join(format!("document.{}", extension_for(source.format))),
+            format: source.format,
+        };
+        let staged_path_lock = self.path_lock(&staged_document.path);
+        let _staged_guard = staged_path_lock.lock().await;
+        tokio::fs::copy(&source.path, &staged_document.path)
+            .await
+            .map_err(|_| operation_failed())?;
+
+        let open_result = self.open_locked(&staged_document, &cancellation).await?;
+        let operation_result = self
+            .runtime
+            .apply_batch(&staged_document, operations, &cancellation)
+            .await
+            .map_err(OfficeServiceError::from);
+        let close_result = if open_result.owns_session {
+            self.close_locked(&staged_document).await
+        } else {
+            Ok(OfficeOperationResult::succeeded(
+                crate::domain::office::OfficeLifecycleOperation::Close,
+            ))
+        };
+        operation_result?;
+        close_result?;
+        if cancellation.is_cancelled() {
+            return Err(OfficeServiceError::new(OfficeServiceErrorKind::Cancelled));
+        }
+        self.ensure_accepting()?;
+        commit_staged_file(&staged_document.path, &target.path).await?;
+        Ok(OfficeOperationResult::succeeded(
+            crate::domain::office::OfficeLifecycleOperation::Close,
+        ))
+    }
+
+    pub async fn render_preview(
+        &self,
+        path: &Path,
+        page: u32,
+        cancellation: OfficeCancellationToken,
+    ) -> Result<OfficePreview, OfficeServiceError> {
+        if !(1..=10_000).contains(&page) {
+            return Err(operation_failed());
+        }
+        let preview_dir = tempfile::Builder::new()
+            .prefix("shendesk-office-preview-")
+            .tempdir()
+            .map_err(|_| operation_failed())?;
+        let output = preview_dir.path().join("preview.png");
+        self.with_document(path, cancellation, |runtime, document, cancellation| {
+            let output = output.clone();
+            async move {
+                runtime
+                    .render_preview(&document, page, &output, &cancellation)
+                    .await
+                    .map_err(OfficeServiceError::from)
+            }
+        })
+        .await?;
+        let metadata = tokio::fs::metadata(&output)
+            .await
+            .map_err(|_| operation_failed())?;
+        if !metadata.is_file() || metadata.len() > MAX_PREVIEW_BYTES {
+            return Err(operation_failed());
+        }
+        let bytes = tokio::fs::read(&output)
+            .await
+            .map_err(|_| operation_failed())?;
+        if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return Err(operation_failed());
+        }
+        let bytes = tokio::task::spawn_blocking(move || {
+            image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+                .map_err(|_| operation_failed())?;
+            Ok::<_, OfficeServiceError>(bytes)
+        })
+        .await
+        .map_err(|_| operation_failed())??;
+        Ok(OfficePreview {
+            mime_type: "image/png".to_owned(),
+            data_url: format!("data:image/png;base64,{}", BASE64.encode(bytes)),
+        })
     }
 
     /// Runs an application operation inside an owned OfficeCLI document session.
@@ -415,6 +626,139 @@ fn normalize_document(path: &Path) -> Result<OfficeDocument, OfficeServiceError>
     Ok(OfficeDocument { path, format })
 }
 
+fn normalize_new_document(path: &Path) -> Result<OfficeDocument, OfficeServiceError> {
+    let format = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(OfficeDocumentFormat::from_extension)
+        .ok_or_else(|| OfficeServiceError::new(OfficeServiceErrorKind::FormatUnsupported))?;
+    if !path.is_absolute() {
+        return Err(OfficeServiceError::new(
+            OfficeServiceErrorKind::DocumentNotFound,
+        ));
+    }
+    let file_name = path.file_name().ok_or_else(operation_failed)?;
+    let parent = path
+        .parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .filter(|parent| parent.is_dir())
+        .ok_or_else(|| OfficeServiceError::new(OfficeServiceErrorKind::DocumentNotFound))?;
+    Ok(OfficeDocument {
+        path: parent.join(file_name),
+        format,
+    })
+}
+
+fn ensure_output_available(path: &Path) -> Result<(), OfficeServiceError> {
+    if path.exists() {
+        Err(OfficeServiceError::new(
+            OfficeServiceErrorKind::OutputConflict,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_operations(
+    format: OfficeDocumentFormat,
+    operations: &[OfficeDocumentOperation],
+) -> Result<(), OfficeServiceError> {
+    if operations.is_empty() || operations.len() > MAX_BATCH_OPERATIONS {
+        return Err(operation_failed());
+    }
+    let mut total_text_bytes = 0_usize;
+    for operation in operations {
+        if !operation.supports_format(format) {
+            return Err(OfficeServiceError::new(
+                OfficeServiceErrorKind::FormatUnsupported,
+            ));
+        }
+        let (valid, text_bytes) = match operation {
+            OfficeDocumentOperation::AddWordParagraph { text }
+            | OfficeDocumentOperation::AddPresentationSlide { title: text }
+            | OfficeDocumentOperation::AddPresentationText { text, .. } => (
+                !text.is_empty() && text.len() <= MAX_OPERATION_TEXT_BYTES,
+                text.len(),
+            ),
+            OfficeDocumentOperation::SetSpreadsheetCell { cell, value } => (
+                valid_cell_reference(cell) && value.len() <= MAX_OPERATION_TEXT_BYTES,
+                value.len(),
+            ),
+        };
+        total_text_bytes = total_text_bytes.saturating_add(text_bytes);
+        if !valid
+            || total_text_bytes > MAX_BATCH_TEXT_BYTES
+            || matches!(
+                operation,
+                OfficeDocumentOperation::AddPresentationText { slide: 0, .. }
+            )
+        {
+            return Err(operation_failed());
+        }
+    }
+    Ok(())
+}
+
+fn valid_cell_reference(cell: &str) -> bool {
+    let split = cell
+        .bytes()
+        .position(|byte| byte.is_ascii_digit())
+        .unwrap_or(cell.len());
+    let (column, row) = cell.split_at(split);
+    let column_number = column.bytes().fold(0_u32, |value, byte| {
+        value
+            .saturating_mul(26)
+            .saturating_add(u32::from(byte.saturating_sub(b'A')) + 1)
+    });
+    !column.is_empty()
+        && column.len() <= 3
+        && column.bytes().all(|byte| byte.is_ascii_uppercase())
+        && column_number <= 16_384
+        && !row.is_empty()
+        && row.len() <= 7
+        && row.bytes().all(|byte| byte.is_ascii_digit())
+        && row
+            .parse::<u32>()
+            .is_ok_and(|row| (1..=1_048_576).contains(&row))
+}
+
+fn extension_for(format: OfficeDocumentFormat) -> &'static str {
+    match format {
+        OfficeDocumentFormat::Word => "docx",
+        OfficeDocumentFormat::Spreadsheet => "xlsx",
+        OfficeDocumentFormat::Presentation => "pptx",
+    }
+}
+
+async fn commit_staged_file(source: &Path, target: &Path) -> Result<(), OfficeServiceError> {
+    let source = source.to_path_buf();
+    let target = target.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let parent = target.parent().ok_or_else(operation_failed)?;
+        let mut staged = tempfile::NamedTempFile::new_in(parent).map_err(|_| operation_failed())?;
+        let mut input = fs::File::open(source).map_err(|_| operation_failed())?;
+        std::io::copy(&mut input, staged.as_file_mut()).map_err(|_| operation_failed())?;
+        staged
+            .as_file()
+            .sync_all()
+            .map_err(|_| operation_failed())?;
+        staged.persist_noclobber(target).map_err(|error| {
+            if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+                OfficeServiceError::new(OfficeServiceErrorKind::OutputConflict)
+            } else {
+                operation_failed()
+            }
+        })?;
+        Ok(())
+    })
+    .await
+    .map_err(|_| operation_failed())?
+}
+
+fn operation_failed() -> OfficeServiceError {
+    OfficeServiceError::new(OfficeServiceErrorKind::OperationFailed)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -430,7 +774,10 @@ mod tests {
     #[derive(Debug, Default)]
     struct RecordingRuntime {
         calls: Mutex<Vec<OfficeLifecycleOperation>>,
+        operations: Mutex<Vec<OfficeDocumentOperation>>,
+        preview_paths: Mutex<Vec<PathBuf>>,
         reuses_existing_session: bool,
+        fail_batch: bool,
     }
 
     #[async_trait]
@@ -465,6 +812,66 @@ mod tests {
             Ok(OfficeOperationResult::succeeded(
                 OfficeLifecycleOperation::Close,
             ))
+        }
+
+        async fn create(
+            &self,
+            document: &OfficeDocument,
+            cancellation: &OfficeCancellationToken,
+        ) -> Result<OfficeOperationResult, OfficeRuntimeError> {
+            if cancellation.is_cancelled() {
+                return Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::Cancelled));
+            }
+            fs::write(&document.path, b"created")
+                .map_err(|_| OfficeRuntimeError::new(OfficeRuntimeErrorKind::Io))?;
+            self.calls
+                .lock()
+                .expect("calls should lock")
+                .push(OfficeLifecycleOperation::Open);
+            Ok(OfficeOperationResult::opened(true))
+        }
+
+        async fn inspect(
+            &self,
+            _document: &OfficeDocument,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<Value, OfficeRuntimeError> {
+            Ok(serde_json::json!({ "matches": 1 }))
+        }
+
+        async fn apply_batch(
+            &self,
+            document: &OfficeDocument,
+            operations: &[OfficeDocumentOperation],
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<(), OfficeRuntimeError> {
+            self.operations
+                .lock()
+                .expect("operations should lock")
+                .extend_from_slice(operations);
+            fs::write(&document.path, b"edited")
+                .map_err(|_| OfficeRuntimeError::new(OfficeRuntimeErrorKind::Io))?;
+            if self.fail_batch {
+                Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::NonZeroExit))
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn render_preview(
+            &self,
+            _document: &OfficeDocument,
+            _page: u32,
+            output: &Path,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<(), OfficeRuntimeError> {
+            self.preview_paths
+                .lock()
+                .expect("preview paths should lock")
+                .push(output.to_path_buf());
+            image::RgbImage::new(1, 1)
+                .save_with_format(output, image::ImageFormat::Png)
+                .map_err(|_| OfficeRuntimeError::new(OfficeRuntimeErrorKind::Io))
         }
 
         fn cancel_all(&self) -> usize {
@@ -611,5 +1018,141 @@ mod tests {
             *runtime.calls.lock().expect("calls should lock"),
             vec![OfficeLifecycleOperation::Open]
         );
+    }
+
+    #[test]
+    fn creates_without_overwriting_and_closes_before_commit() {
+        let root = tempfile::tempdir().expect("temporary directory should exist");
+        let path = root.path().join("created.docx");
+        let runtime = Arc::new(RecordingRuntime::default());
+        let service = OfficeService::new(runtime.clone());
+
+        tauri::async_runtime::block_on(
+            service.create_document(&path, OfficeCancellationToken::default()),
+        )
+        .expect("document should be created");
+        assert_eq!(
+            fs::read(&path).expect("document should be readable"),
+            b"created"
+        );
+        assert_eq!(
+            *runtime.calls.lock().expect("calls should lock"),
+            vec![
+                OfficeLifecycleOperation::Open,
+                OfficeLifecycleOperation::Close
+            ]
+        );
+
+        let error = tauri::async_runtime::block_on(
+            service.create_document(&path, OfficeCancellationToken::default()),
+        )
+        .expect_err("existing output must not be replaced");
+        assert_eq!(error.kind(), OfficeServiceErrorKind::OutputConflict);
+    }
+
+    #[test]
+    fn applies_ordered_operations_to_a_copy_and_preserves_the_original() {
+        let root = tempfile::tempdir().expect("temporary directory should exist");
+        let source = root.path().join("source.docx");
+        let output = root.path().join("output.docx");
+        fs::write(&source, b"original").expect("source should exist");
+        let operations = vec![
+            OfficeDocumentOperation::AddWordParagraph {
+                text: "first".to_owned(),
+            },
+            OfficeDocumentOperation::AddWordParagraph {
+                text: "second".to_owned(),
+            },
+        ];
+        let runtime = Arc::new(RecordingRuntime::default());
+        let service = OfficeService::new(runtime.clone());
+
+        tauri::async_runtime::block_on(service.apply_operations(
+            &source,
+            &output,
+            &operations,
+            OfficeCancellationToken::default(),
+        ))
+        .expect("operations should succeed");
+
+        assert_eq!(
+            fs::read(&source).expect("source should remain"),
+            b"original"
+        );
+        assert_eq!(fs::read(&output).expect("output should exist"), b"edited");
+        assert_eq!(
+            *runtime.operations.lock().expect("operations should lock"),
+            operations
+        );
+    }
+
+    #[test]
+    fn failed_batch_never_publishes_its_staged_output() {
+        let root = tempfile::tempdir().expect("temporary directory should exist");
+        let source = root.path().join("source.docx");
+        let output = root.path().join("output.docx");
+        fs::write(&source, b"original").expect("source should exist");
+        let runtime = Arc::new(RecordingRuntime {
+            fail_batch: true,
+            ..RecordingRuntime::default()
+        });
+        let service = OfficeService::new(runtime);
+
+        let error = tauri::async_runtime::block_on(service.apply_operations(
+            &source,
+            &output,
+            &[OfficeDocumentOperation::AddWordParagraph {
+                text: "partial".to_owned(),
+            }],
+            OfficeCancellationToken::default(),
+        ))
+        .expect_err("failed batch should not commit");
+
+        assert_eq!(error.kind(), OfficeServiceErrorKind::OperationFailed);
+        assert_eq!(
+            fs::read(&source).expect("source should remain"),
+            b"original"
+        );
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn validates_excel_bounds_before_runtime_execution() {
+        assert!(valid_cell_reference("A1"));
+        assert!(valid_cell_reference("XFD1048576"));
+        for invalid in ["A0", "XFE1", "a1", "A1048577", "A1:B2"] {
+            assert!(!valid_cell_reference(invalid));
+        }
+    }
+
+    #[test]
+    fn returns_structured_inspection_and_cleans_preview_files() {
+        let fixture = tempfile::Builder::new()
+            .suffix(".pptx")
+            .tempfile()
+            .expect("fixture should exist");
+        let runtime = Arc::new(RecordingRuntime::default());
+        let service = OfficeService::new(runtime.clone());
+
+        let inspection = tauri::async_runtime::block_on(
+            service.inspect_document(fixture.path(), OfficeCancellationToken::default()),
+        )
+        .expect("inspection should succeed");
+        assert_eq!(inspection.structure, serde_json::json!({ "matches": 1 }));
+
+        let preview = tauri::async_runtime::block_on(service.render_preview(
+            fixture.path(),
+            1,
+            OfficeCancellationToken::default(),
+        ))
+        .expect("preview should succeed");
+        assert_eq!(preview.mime_type, "image/png");
+        assert!(preview.data_url.starts_with("data:image/png;base64,"));
+        assert!(runtime
+            .preview_paths
+            .lock()
+            .expect("preview paths should lock")
+            .iter()
+            .all(|path| !path.exists()));
     }
 }

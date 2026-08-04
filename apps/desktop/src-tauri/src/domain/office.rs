@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +26,46 @@ impl OfficeDocumentFormat {
 pub struct OfficeDocument {
     pub path: PathBuf,
     pub format: OfficeDocumentFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum OfficeDocumentOperation {
+    AddWordParagraph { text: String },
+    SetSpreadsheetCell { cell: String, value: String },
+    AddPresentationSlide { title: String },
+    AddPresentationText { slide: u32, text: String },
+}
+
+impl OfficeDocumentOperation {
+    pub fn supports_format(&self, format: OfficeDocumentFormat) -> bool {
+        matches!(
+            (self, format),
+            (Self::AddWordParagraph { .. }, OfficeDocumentFormat::Word)
+                | (
+                    Self::SetSpreadsheetCell { .. },
+                    OfficeDocumentFormat::Spreadsheet
+                )
+                | (
+                    Self::AddPresentationSlide { .. } | Self::AddPresentationText { .. },
+                    OfficeDocumentFormat::Presentation
+                )
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficeInspection {
+    pub format: OfficeDocumentFormat,
+    pub structure: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficePreview {
+    pub mime_type: String,
+    pub data_url: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,5 +150,27 @@ mod tests {
             Some(OfficeDocumentFormat::Presentation)
         );
         assert_eq!(OfficeDocumentFormat::from_extension("pdf"), None);
+    }
+
+    #[test]
+    fn operations_are_explicit_and_format_scoped() {
+        let operation: OfficeDocumentOperation = serde_json::from_value(serde_json::json!({
+            "type": "set_spreadsheet_cell",
+            "cell": "A1",
+            "value": "fixture"
+        }))
+        .expect("operation should deserialize");
+
+        assert!(operation.supports_format(OfficeDocumentFormat::Spreadsheet));
+        assert!(!operation.supports_format(OfficeDocumentFormat::Word));
+        assert!(
+            serde_json::from_value::<OfficeDocumentOperation>(serde_json::json!({
+                "type": "set_spreadsheet_cell",
+                "cell": "A1",
+                "value": "fixture",
+                "command": "raw-set"
+            }))
+            .is_err()
+        );
     }
 }

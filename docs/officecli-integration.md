@@ -63,9 +63,10 @@ commands. Runtime code must resolve the bundled sidecar internally and expose
 only typed document operations; callers must not provide executable paths or
 arbitrary OfficeCLI subcommands.
 
-`application::office_service::OfficeRuntime` is the Rust Core port. Its initial
-surface is deliberately limited to version probing and document `open`/`close`
-lifecycle operations. `infrastructure::office::OfficeCliRuntime` resolves only
+`application::office_service::OfficeRuntime` is the Rust Core port. Its surface
+is limited to version probing, document lifecycle, create, structured inspect,
+four whitelisted batch operations, and PNG screenshot rendering.
+`infrastructure::office::OfficeCliRuntime` resolves only
 the `officecli` executable bundled beside ShenDesk, compares `--version` with
 the pinned manifest using an exact SemVer token match, passes arguments without
 shell parsing, and captures both
@@ -74,6 +75,15 @@ cancellation, non-zero exit, crash, oversized output, and invalid JSON are
 mapped to stable service errors. Logs record operation names, error kinds, exit
 codes, and byte counts only; they do not record document paths, document
 content, named-pipe names, or raw stderr.
+
+Create and edit never publish a partially written destination. Work happens in
+a same-filesystem staging location, every owned resident is closed first, and
+the result is committed with no-clobber semantics. Existing documents are
+copied and the original remains untouched. Screenshot output is written to a
+per-call managed temporary directory, checked for PNG signature and a 16 MiB
+limit, returned as a data URL, and deleted before the call completes. The
+WebView uses that local resource under the existing image CSP; OfficeCLI `watch` and
+HTML output are never invoked.
 
 Startup probing has its own two-second timeout instead of using the 30-second
 document-operation timeout. Lifecycle JSON must contain a boolean

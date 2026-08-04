@@ -11,7 +11,7 @@ use std::{
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -24,7 +24,8 @@ use crate::{
         OfficeCancellationToken, OfficeRuntime, OfficeRuntimeError, OfficeRuntimeErrorKind,
     },
     domain::office::{
-        OfficeDocument, OfficeEngineStatus, OfficeLifecycleOperation, OfficeOperationResult,
+        OfficeDocument, OfficeDocumentOperation, OfficeEngineStatus, OfficeLifecycleOperation,
+        OfficeOperationResult,
     },
 };
 
@@ -33,6 +34,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(8);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFAULT_OUTPUT_LIMIT: usize = 1024 * 1024;
+const MAX_BATCH_ARGUMENT_UTF16: usize = 24_000;
 
 #[derive(Debug)]
 pub struct OfficeCliRuntime {
@@ -319,6 +321,133 @@ impl OfficeRuntime for OfficeCliRuntime {
         ))
     }
 
+    async fn create(
+        &self,
+        document: &OfficeDocument,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<OfficeOperationResult, OfficeRuntimeError> {
+        if cancellation.is_cancelled() {
+            return Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::Cancelled));
+        }
+        // Like `open`, create forks a resident. Let the ownership handshake
+        // finish so cancellation cannot orphan it between spawn and response.
+        let response = match self
+            .run_json(
+                "create",
+                vec![
+                    OsString::from("create"),
+                    document.path.as_os_str().to_owned(),
+                    OsString::from("--json"),
+                ],
+                &OfficeCancellationToken::default(),
+                self.timeout,
+                false,
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                let _ = self.close(document).await;
+                return Err(error);
+            }
+        };
+        if let Err(error) = validate_success_envelope(&response) {
+            let _ = self.close(document).await;
+            return Err(error);
+        }
+        if cancellation.is_cancelled() {
+            let _ = self.close(document).await;
+            return Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::Cancelled));
+        }
+        Ok(OfficeOperationResult::opened(true))
+    }
+
+    async fn inspect(
+        &self,
+        document: &OfficeDocument,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<Value, OfficeRuntimeError> {
+        let root = match document.format {
+            crate::domain::office::OfficeDocumentFormat::Word => "/body",
+            crate::domain::office::OfficeDocumentFormat::Spreadsheet => "/Sheet1",
+            crate::domain::office::OfficeDocumentFormat::Presentation => "/",
+        };
+        let response = self
+            .run_json(
+                "inspect",
+                vec![
+                    OsString::from("get"),
+                    document.path.as_os_str().to_owned(),
+                    OsString::from(root),
+                    OsString::from("--depth"),
+                    OsString::from("3"),
+                    OsString::from("--json"),
+                ],
+                cancellation,
+                self.timeout,
+                true,
+            )
+            .await?;
+        success_data(&response)
+    }
+
+    async fn apply_batch(
+        &self,
+        document: &OfficeDocument,
+        operations: &[OfficeDocumentOperation],
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<(), OfficeRuntimeError> {
+        let commands = serde_json::to_string(&batch_commands(operations))
+            .map_err(|_| OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))?;
+        if commands.encode_utf16().count() > MAX_BATCH_ARGUMENT_UTF16 {
+            return Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::OutputLimit));
+        }
+        let response = self
+            .run_json(
+                "batch",
+                vec![
+                    OsString::from("batch"),
+                    document.path.as_os_str().to_owned(),
+                    OsString::from("--commands"),
+                    OsString::from(commands),
+                    OsString::from("--json"),
+                ],
+                cancellation,
+                self.timeout,
+                true,
+            )
+            .await?;
+        validate_batch_envelope(&response, operations.len())
+    }
+
+    async fn render_preview(
+        &self,
+        document: &OfficeDocument,
+        page: u32,
+        output: &std::path::Path,
+        cancellation: &OfficeCancellationToken,
+    ) -> Result<(), OfficeRuntimeError> {
+        let response = self
+            .run_json(
+                "preview",
+                vec![
+                    OsString::from("view"),
+                    document.path.as_os_str().to_owned(),
+                    OsString::from("screenshot"),
+                    OsString::from("-o"),
+                    output.as_os_str().to_owned(),
+                    OsString::from("--page"),
+                    OsString::from(page.to_string()),
+                    OsString::from("--json"),
+                ],
+                cancellation,
+                self.timeout,
+                true,
+            )
+            .await?;
+        validate_success_envelope(&response)
+    }
+
     fn cancel_all(&self) -> usize {
         let tokens = self
             .active_children
@@ -340,6 +469,87 @@ fn validate_success_envelope(response: &Value) -> Result<(), OfficeRuntimeError>
         Some(false) => Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::NonZeroExit)),
         None => Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson)),
     }
+}
+
+fn success_data(response: &Value) -> Result<Value, OfficeRuntimeError> {
+    validate_success_envelope(response)?;
+    response
+        .get("data")
+        .filter(|data| data.is_object() || data.is_array())
+        .cloned()
+        .ok_or_else(|| OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))
+}
+
+fn validate_batch_envelope(
+    response: &Value,
+    expected_count: usize,
+) -> Result<(), OfficeRuntimeError> {
+    validate_success_envelope(response)?;
+    let data = response
+        .get("data")
+        .and_then(Value::as_object)
+        .ok_or_else(|| OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))?;
+    let results = data
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or_else(|| OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))?;
+    let summary = data
+        .get("summary")
+        .and_then(Value::as_object)
+        .ok_or_else(|| OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))?;
+    let summary_matches = ["total", "executed", "succeeded"]
+        .into_iter()
+        .all(|key| summary.get(key).and_then(Value::as_u64) == Some(expected_count as u64))
+        && ["failed", "skipped"]
+            .into_iter()
+            .all(|key| summary.get(key).and_then(Value::as_u64) == Some(0));
+    let results_match = results.len() == expected_count
+        && results.iter().enumerate().all(|(index, result)| {
+            result.get("index").and_then(Value::as_u64) == Some(index as u64)
+                && result.get("success").and_then(Value::as_bool) == Some(true)
+        });
+    if summary_matches && results_match {
+        Ok(())
+    } else {
+        Err(OfficeRuntimeError::new(OfficeRuntimeErrorKind::InvalidJson))
+    }
+}
+
+fn batch_commands(operations: &[OfficeDocumentOperation]) -> Vec<Value> {
+    operations
+        .iter()
+        .map(|operation| match operation {
+            OfficeDocumentOperation::AddWordParagraph { text } => json!({
+                "command": "add",
+                "parent": "/body",
+                "type": "paragraph",
+                "props": { "text": text },
+            }),
+            OfficeDocumentOperation::SetSpreadsheetCell { cell, value } => json!({
+                "command": "set",
+                "path": format!("/Sheet1/{cell}"),
+                "props": { "value": value },
+            }),
+            OfficeDocumentOperation::AddPresentationSlide { title } => json!({
+                "command": "add",
+                "parent": "/",
+                "type": "slide",
+                "props": { "title": title },
+            }),
+            OfficeDocumentOperation::AddPresentationText { slide, text } => json!({
+                "command": "add",
+                "parent": format!("/slide[{slide}]"),
+                "type": "shape",
+                "props": {
+                    "text": text,
+                    "x": "2cm",
+                    "y": "4cm",
+                    "width": "20cm",
+                    "height": "2cm",
+                },
+            }),
+        })
+        .collect()
 }
 
 async fn read_limited<R>(
@@ -572,6 +782,25 @@ mod tests {
     }
 
     #[test]
+    fn malformed_create_response_closes_a_possible_resident() {
+        let (root, runtime) = fixture_runtime(
+            "#!/bin/sh\nif [ \"$1\" = \"create\" ]; then echo 'not-json'; else touch \"$2.closed\"; echo '{\"success\":true}'; fi\n",
+            Duration::from_secs(1),
+            1024,
+        );
+        let path = root.path().join("fixture.docx");
+        let closed_marker = root.path().join("fixture.docx.closed");
+
+        let error = tauri::async_runtime::block_on(
+            runtime.create(&document(&path), &OfficeCancellationToken::default()),
+        )
+        .expect_err("malformed create should fail");
+
+        assert_eq!(error.kind(), OfficeRuntimeErrorKind::InvalidJson);
+        assert!(closed_marker.is_file());
+    }
+
+    #[test]
     fn startup_probe_uses_a_shorter_timeout_than_document_operations() {
         assert!(PROBE_TIMEOUT < DEFAULT_TIMEOUT);
         assert!(PROBE_TIMEOUT < OPEN_TIMEOUT);
@@ -590,5 +819,189 @@ mod tests {
 
         assert_eq!(error.kind(), OfficeRuntimeErrorKind::MissingSidecar);
         assert!(!error.to_string().contains("/definitely"));
+    }
+
+    #[test]
+    fn translates_only_whitelisted_batch_operations_in_order() {
+        let commands = batch_commands(&[
+            OfficeDocumentOperation::AddPresentationSlide {
+                title: "Fixture".to_owned(),
+            },
+            OfficeDocumentOperation::AddPresentationText {
+                slide: 1,
+                text: "Body".to_owned(),
+            },
+        ]);
+
+        assert_eq!(commands[0]["command"], "add");
+        assert_eq!(commands[0]["type"], "slide");
+        assert_eq!(commands[1]["parent"], "/slide[1]");
+        assert_eq!(commands[1]["props"]["text"], "Body");
+        assert!(commands.iter().all(|command| command["command"] != "raw"));
+    }
+
+    #[test]
+    fn oversized_escaped_batch_is_rejected_before_spawn() {
+        let (root, runtime) = fixture_runtime(
+            "#!/bin/sh\ntouch \"$0.started\"\necho '{\"success\":true}'\n",
+            Duration::from_secs(1),
+            1024,
+        );
+        let path = root.path().join("fixture.docx");
+        fs::write(&path, b"fixture").expect("fixture should exist");
+        let error = tauri::async_runtime::block_on(runtime.apply_batch(
+            &document(&path),
+            &[OfficeDocumentOperation::AddWordParagraph {
+                text: "\0".repeat(5_000),
+            }],
+            &OfficeCancellationToken::default(),
+        ))
+        .expect_err("oversized command line should fail");
+
+        assert_eq!(error.kind(), OfficeRuntimeErrorKind::OutputLimit);
+        assert!(!runtime.sidecar_path.with_extension("started").exists());
+    }
+
+    #[test]
+    fn extracts_only_valid_non_null_success_data() {
+        assert_eq!(
+            success_data(&serde_json::json!({ "success": true, "data": { "matches": 1 } }))
+                .expect("data should be accepted"),
+            serde_json::json!({ "matches": 1 })
+        );
+        assert!(success_data(&serde_json::json!({ "success": true })).is_err());
+        assert!(success_data(&serde_json::json!({ "success": true, "data": null })).is_err());
+        assert!(success_data(&serde_json::json!({ "success": true, "data": "text" })).is_err());
+    }
+
+    #[test]
+    fn batch_success_requires_every_ordered_result() {
+        let valid = serde_json::json!({
+            "success": true,
+            "data": {
+                "results": [
+                    { "index": 0, "success": true },
+                    { "index": 1, "success": true }
+                ],
+                "summary": {
+                    "total": 2,
+                    "executed": 2,
+                    "succeeded": 2,
+                    "failed": 0,
+                    "skipped": 0
+                }
+            }
+        });
+        assert!(validate_batch_envelope(&valid, 2).is_ok());
+
+        let mut malformed = valid;
+        malformed["data"]["results"][1]["index"] = serde_json::json!(0);
+        assert!(validate_batch_envelope(&malformed, 2).is_err());
+    }
+
+    #[test]
+    fn officecli_round_trip_and_regression_fixtures_when_enabled() {
+        let Ok(sidecar) = std::env::var("SHENDESK_OFFICECLI_E2E") else {
+            return;
+        };
+        let runtime = OfficeCliRuntime::new(
+            Path::new(&sidecar).to_path_buf(),
+            "1.0.143".to_owned(),
+            Duration::from_secs(60),
+            16 * 1024 * 1024,
+        );
+        let cancellation = OfficeCancellationToken::default();
+        tauri::async_runtime::block_on(runtime.probe()).expect("pinned OfficeCLI should probe");
+
+        let cases = [
+            (
+                OfficeDocumentFormat::Word,
+                "docx",
+                "ShenDesk Word fixture",
+                vec![OfficeDocumentOperation::AddWordParagraph {
+                    text: "ShenDesk Word fixture".to_owned(),
+                }],
+                "word-fixture.docx",
+            ),
+            (
+                OfficeDocumentFormat::Spreadsheet,
+                "xlsx",
+                "ShenDesk Excel fixture",
+                vec![OfficeDocumentOperation::SetSpreadsheetCell {
+                    cell: "A1".to_owned(),
+                    value: "ShenDesk Excel fixture".to_owned(),
+                }],
+                "spreadsheet-fixture.xlsx",
+            ),
+            (
+                OfficeDocumentFormat::Presentation,
+                "pptx",
+                "ShenDesk PowerPoint fixture",
+                vec![
+                    OfficeDocumentOperation::AddPresentationSlide {
+                        title: "ShenDesk PowerPoint fixture".to_owned(),
+                    },
+                    OfficeDocumentOperation::AddPresentationText {
+                        slide: 1,
+                        text: "ShenDesk PowerPoint fixture".to_owned(),
+                    },
+                ],
+                "presentation-fixture.pptx",
+            ),
+        ];
+
+        for (format, extension, marker, operations, fixture_name) in cases {
+            let root = tempfile::tempdir().expect("temporary directory should exist");
+            let created = OfficeDocument {
+                path: root.path().join(format!("created.{extension}")),
+                format,
+            };
+            tauri::async_runtime::block_on(runtime.create(&created, &cancellation))
+                .expect("document should be created");
+            tauri::async_runtime::block_on(runtime.close(&created))
+                .expect("created resident should close");
+            tauri::async_runtime::block_on(runtime.open(&created, &cancellation))
+                .expect("created document should reopen");
+            tauri::async_runtime::block_on(runtime.apply_batch(
+                &created,
+                &operations,
+                &cancellation,
+            ))
+            .expect("batch should succeed");
+            tauri::async_runtime::block_on(runtime.close(&created))
+                .expect("changes should flush on close");
+            tauri::async_runtime::block_on(runtime.open(&created, &cancellation))
+                .expect("modified document should reopen");
+            let structure =
+                tauri::async_runtime::block_on(runtime.inspect(&created, &cancellation))
+                    .expect("document should inspect");
+            assert!(structure.to_string().contains(marker));
+            let preview = root.path().join("preview.png");
+            tauri::async_runtime::block_on(runtime.render_preview(
+                &created,
+                1,
+                &preview,
+                &cancellation,
+            ))
+            .expect("preview should render");
+            tauri::async_runtime::block_on(runtime.close(&created))
+                .expect("inspection resident should close");
+            image::load_from_memory(&fs::read(&preview).expect("preview should exist"))
+                .expect("preview should be valid PNG");
+
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/office")
+                .join(fixture_name);
+            let fixture_document = OfficeDocument {
+                path: fixture,
+                format,
+            };
+            let fixture_structure =
+                tauri::async_runtime::block_on(runtime.inspect(&fixture_document, &cancellation))
+                    .expect("regression fixture should inspect");
+            assert!(fixture_structure.to_string().contains(marker));
+        }
+
+        assert_eq!(runtime.cancel_all(), 0);
     }
 }

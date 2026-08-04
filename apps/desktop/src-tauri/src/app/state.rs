@@ -121,7 +121,8 @@ mod tests {
             auth::{AccessToken, LoginRequest},
             event::EventKind,
             office::{
-                OfficeDocument, OfficeEngineStatus, OfficeLifecycleOperation, OfficeOperationResult,
+                OfficeDocument, OfficeDocumentOperation, OfficeEngineStatus,
+                OfficeLifecycleOperation, OfficeOperationResult,
             },
             update::UpdateInfo,
         },
@@ -167,6 +168,41 @@ mod tests {
             Ok(OfficeOperationResult::succeeded(
                 OfficeLifecycleOperation::Close,
             ))
+        }
+
+        async fn create(
+            &self,
+            _document: &OfficeDocument,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<OfficeOperationResult, OfficeRuntimeError> {
+            Ok(OfficeOperationResult::opened(true))
+        }
+
+        async fn inspect(
+            &self,
+            _document: &OfficeDocument,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<serde_json::Value, OfficeRuntimeError> {
+            Ok(serde_json::json!({}))
+        }
+
+        async fn apply_batch(
+            &self,
+            _document: &OfficeDocument,
+            _operations: &[OfficeDocumentOperation],
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<(), OfficeRuntimeError> {
+            Ok(())
+        }
+
+        async fn render_preview(
+            &self,
+            _document: &OfficeDocument,
+            _page: u32,
+            _output: &std::path::Path,
+            _cancellation: &OfficeCancellationToken,
+        ) -> Result<(), OfficeRuntimeError> {
+            Ok(())
         }
 
         fn cancel_all(&self) -> usize {
