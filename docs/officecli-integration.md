@@ -42,6 +42,18 @@ macOS release builds use `officecli.entitlements` while Tauri signs the nested
 sidecar under hardened runtime. The release workflow verifies the final
 `ShenDesk.app/Contents/MacOS/officecli` Developer ID signature and requires
 `com.apple.security.cs.allow-jit=true` before accepting the notarized bundle.
+The signing order is: build the unsigned sidecar, let Tauri sign nested code
+with the entitlement, sign the outer `ShenDesk.app`, then notarize and staple
+the app. The action's build wrapper subsequently runs deep signature,
+entitlement, native-architecture, stapler, and Gatekeeper checks against that
+final app path.
+
+The same wrapper executes the bundled OfficeCLI on both native macOS runners.
+It checks the pinned version, creates and opens a Word document, writes and
+reads a marker paragraph through the resident process, and closes the resident
+to persist the file. Every invocation sets `OFFICECLI_SKIP_UPDATE=1`. The
+wrapper must succeed before `tauri-action` creates or uploads Draft release
+assets, so a signing, notarization, or smoke-test failure publishes nothing.
 
 ## Runtime boundary
 

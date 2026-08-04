@@ -117,10 +117,13 @@ test("keeps updater artifact generation release-only", () => {
 });
 
 test("release workflow is tag-only and minimizes signing-key exposure", async () => {
-  const workflow = await readFile(
-    new URL("../workflows/release.yml", import.meta.url),
-    "utf8",
-  );
+  const [workflow, macosBuildScript] = await Promise.all([
+    readFile(new URL("../workflows/release.yml", import.meta.url), "utf8"),
+    readFile(
+      new URL("./build-verify-macos-release.sh", import.meta.url),
+      "utf8",
+    ),
+  ]);
 
   assert.match(workflow, /tags:\s*\n\s*- "v\*"/);
   assert.doesNotMatch(workflow, /pull_request:/);
@@ -181,7 +184,7 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     /target: (?:aarch64|x86_64)-apple-darwin --bundles dmg(?:\s|$)/,
   );
   const macosBuildStep = workflow.match(
-    /- name: Build, sign, notarize, and upload macOS release assets[\s\S]*?(?=\n\s+- name: Verify macOS)/,
+    /- name: Build, verify, and upload macOS release assets[\s\S]*?(?=\n\s+- name: Build, sign, and upload Windows)/,
   )?.[0];
   const windowsBuildStep = workflow.match(
     /- name: Build, sign, and upload Windows updater release assets[\s\S]*$/,
@@ -199,17 +202,33 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
     assert.match(macosBuildStep, new RegExp(`${environmentVariable}: \\$\\{\\{`));
     assert.doesNotMatch(windowsBuildStep, new RegExp(environmentVariable));
   }
-  assert.match(workflow, /codesign --verify --deep --strict/);
+  assert.match(workflow, /officecli_arch: arm64/);
+  assert.match(workflow, /officecli_arch: x86_64/);
   assert.match(
-    workflow,
+    macosBuildStep,
+    /tauriScript: \$\{\{ github\.workspace \}\}\/\.github\/scripts\/build-verify-macos-release\.sh/,
+  );
+  assert.match(macosBuildScript, /pnpm run tauri "\$@"/);
+  assert.match(macosBuildScript, /codesign --verify --deep --strict/);
+  assert.match(
+    macosBuildScript,
     /Authority=Developer ID Application:/,
   );
-  assert.match(workflow, /xcrun stapler validate/);
-  assert.match(workflow, /spctl --assess --type execute/);
-  assert.match(workflow, /Contents\/MacOS\/officecli/);
-  assert.match(workflow, /OfficeCLI is not signed with a Developer ID Application certificate/);
-  assert.match(workflow, /com\.apple\.security\.cs\.allow-jit/);
-  assert.match(workflow, /PlistBuddy/);
+  assert.match(macosBuildScript, /xcrun stapler validate/);
+  assert.match(macosBuildScript, /spctl --assess --type execute/);
+  assert.match(macosBuildScript, /Contents\/MacOS\/officecli/);
+  assert.match(macosBuildScript, /OfficeCLI is not signed with a Developer ID Application certificate/);
+  assert.match(macosBuildScript, /com\.apple\.security\.cs\.allow-jit/);
+  assert.match(macosBuildScript, /PlistBuddy/);
+  assert.match(macosBuildScript, /lipo -archs/);
+  assert.match(macosBuildScript, /OFFICECLI_SKIP_UPDATE=1/);
+  for (const command of ["--version", "create", "open", "add", "get", "close"]) {
+    assert.match(macosBuildScript, new RegExp(`officecli_path\\\" ${command}`));
+  }
+  assert.ok(
+    macosBuildScript.indexOf('pnpm run tauri "$@"') <
+      macosBuildScript.indexOf("codesign --verify --deep --strict"),
+  );
   assert.match(workflow, /releaseDraft: true/);
 });
 
