@@ -39,6 +39,20 @@ fn main() {
     // repository public-key variable is configured or rotated.
     println!("cargo:rerun-if-env-changed=SHENDESK_UPDATER_PUBLIC_KEY");
 
+    for (source, embedded) in [
+        (
+            "SHENDESK_AUTH_ENVIRONMENT",
+            "SHENDESK_EMBEDDED_AUTH_ENVIRONMENT",
+        ),
+        ("SHENDESK_AUTH_HOST", "SHENDESK_EMBEDDED_AUTH_HOST"),
+        ("SHENDESK_AUTH_SCID", "SHENDESK_EMBEDDED_AUTH_SCID"),
+    ] {
+        println!("cargo:rerun-if-env-changed={source}");
+        if let Ok(value) = std::env::var(source) {
+            println!("cargo:rustc-env={embedded}={value}");
+        }
+    }
+
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

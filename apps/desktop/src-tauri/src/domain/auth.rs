@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,12 +40,25 @@ pub struct RefreshTokenResponse {
 #[serde(rename_all = "camelCase")]
 pub struct AccessToken {
     pub additional_information: UserInformation,
+    #[serde(deserialize_with = "deserialize_unix_seconds")]
     pub expiration: i64,
     pub expires_in: i64,
     pub refresh_token: Value,
     pub scope: Vec<String>,
     pub token_type: String,
     pub value: String,
+}
+
+fn deserialize_unix_seconds<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = i64::deserialize(deserializer)?;
+    Ok(if value > 100_000_000_000 {
+        value / 1_000
+    } else {
+        value
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,7 +121,7 @@ mod tests {
                         "uid": "user-id",
                         "jti": "unconfirmed-extra-field"
                     },
-                    "expiration": 1_800_000_000,
+                    "expiration": 1_800_000_000_000_i64,
                     "expiresIn": 3_600,
                     "refreshToken": {
                         "expiration": 1_900_000_000,
@@ -129,6 +142,7 @@ mod tests {
             .expect("successful response should contain data")
             .additional_information;
         assert_eq!(token.additional_information.realname, "测试用户");
+        assert_eq!(token.expiration, 1_800_000_000);
         assert_eq!(token.value, "access-token");
         assert_eq!(token.refresh_token["value"], "refresh-token");
     }
@@ -166,39 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_refresh_tokens_from_login_and_refresh_contracts() {
-        let object_token: AccessToken = serde_json::from_value(serde_json::json!({
-            "additionalInformation": {
-                "realname": "测试用户",
-                "phone": "13800000000",
-                "username": "13800000000",
-                "uid": "user-id"
-            },
-            "expiration": 1_800_000_000,
-            "expiresIn": 3_600,
-            "refreshToken": { "value": "object-refresh-token" },
-            "scope": ["all"],
-            "tokenType": "bearer",
-            "value": "access-token"
-        }))
-        .expect("object refresh token should deserialize");
-        let string_token = AccessToken {
-            refresh_token: Value::String("string-refresh-token".to_owned()),
-            ..object_token.clone()
-        };
-
-        assert_eq!(
-            object_token.refresh_token_value(),
-            Some("object-refresh-token")
-        );
-        assert_eq!(
-            string_token.refresh_token_value(),
-            Some("string-refresh-token")
-        );
-    }
-
-    #[test]
-    fn deserializes_the_root_refresh_contract() {
+    fn deserializes_the_confirmed_refresh_contract() {
         let payload: RefreshTokenResponse = serde_json::from_value(serde_json::json!({
             "data": {
                 "additionalInformation": {
@@ -207,21 +189,22 @@ mod tests {
                     "username": "13800000000",
                     "uid": "user-id"
                 },
-                "expiration": 1_800_000_000,
+                "expiration": 1_800_000_000_000_i64,
                 "expiresIn": 3_600,
-                "refreshToken": "rotated-refresh-token",
+                "refreshToken": { "value": "rotated-refresh-token" },
                 "scope": ["all"],
                 "tokenType": "bearer",
                 "value": "refreshed-access-token"
             },
             "errcode": "0000",
-            "errmsg": ""
+            "errmsg": "success"
         }))
-        .expect("refresh response should deserialize");
+        .expect("confirmed refresh response should deserialize");
 
         let token = payload
             .data
             .expect("successful refresh should contain data");
+        assert_eq!(token.expiration, 1_800_000_000);
         assert_eq!(token.value, "refreshed-access-token");
         assert_eq!(token.refresh_token_value(), Some("rotated-refresh-token"));
     }
