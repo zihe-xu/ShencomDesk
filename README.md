@@ -62,7 +62,7 @@ pnpm officecli:build -- --target aarch64-apple-darwin
 # 也支持 x86_64-apple-darwin、x86_64-pc-windows-msvc
 ```
 
-普通 CI 至少真实编译一个固定平台；合并后与正式发布从最终 App/MSI 安装目录验证对应架构、精确版本、`LICENSE`/`NOTICE`/第三方声明及 DOCX round trip。详细矩阵见 [`docs/automated-builds.md`](docs/automated-builds.md)，运行时边界见 [`docs/rust-core.md`](docs/rust-core.md) 与 [`docs/security.md`](docs/security.md)。
+普通 CI 至少真实编译一个固定平台；合并后从最终 App/MSI 安装目录验证对应架构、精确版本、`LICENSE`/`NOTICE`/第三方声明，以及 DOCX、XLSX、PPTX 的创建、批量修改、读取、PNG 预览和关闭。详细矩阵见 [`docs/automated-builds.md`](docs/automated-builds.md)，运行时边界见 [`docs/rust-core.md`](docs/rust-core.md) 与 [`docs/security.md`](docs/security.md)。
 
 ## 图片压缩
 
@@ -93,6 +93,8 @@ ShenDesk 使用 Tauri Updater 与 GitHub Releases 提供 macOS / Windows 签名�
 
 签名发布前需要配置 Tauri Updater 密钥，以及 macOS Developer ID 证书与 Apple 公证材料。缺少任一必需配置时，Tag 发布会在跨平台构建前安全失败。完整变量、Secret、运行时和发布流程见 [`docs/auto-update.md`](docs/auto-update.md)。
 
+当前内部使用不创建版本 Tag，也不依赖 Apple Developer Program；内部成员从合并后 Workflow 下载三平台 Artifact。macOS 产物未公证，首次启动需要对应用单次选择“打开”，不得全局关闭 Gatekeeper。面向外部用户发布时仍必须使用上述签名发布流程。
+
 ## 合并后自动化构建
 
 Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 macOS 与 Windows Runner 上构建 Tauri 安装包，并将产物保留 14 天。
@@ -102,6 +104,6 @@ Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 m
 - PR 关闭但未合并：不执行构建。
 - 需要补构建时：可在 GitHub Actions 中使用 `workflow_dispatch` 手动触发。
 
-合并后 Artifact 用于构建验证，不包含正式更新签名或 Release 元数据；上传前已从最终包验证 OfficeCLI。正式发布只由版本 Tag 的 `Signed desktop release` Workflow 生成，任一平台安装后 smoke 失败都会阻止该平台资产上传。构建规则见 [`docs/automated-builds.md`](docs/automated-builds.md)。
+合并后 Artifact 用于内部交付和构建验证，不包含正式更新签名或 Release 元数据；上传前已从最终包验证 OfficeCLI。面向外部用户的正式发布只由版本 Tag 的 `Signed desktop release` Workflow 生成，任一平台安装后 smoke 失败都会阻止该平台资产上传。构建规则见 [`docs/automated-builds.md`](docs/automated-builds.md)。
 
 > Rust 与 Tauri 的平台依赖请参考 Tauri 官方环境配置文档。

@@ -6,7 +6,7 @@
 | --- | --- |
 | 产品 | ShenDesk |
 | 能力 | Office 文档引擎内置一期 |
-| 状态 | 待实施 |
+| 状态 | 内部交付完成 |
 | 目标平台 | macOS Apple Silicon、macOS Intel、Windows x64 |
 | 上游基线 | OfficeCLI `v1.0.143`，commit `fd4adab4dbe3283b62e3edcfad124dd648fa74bc` |
 | 技术设计 | [`officecli-integration.md`](officecli-integration.md) |
@@ -19,14 +19,14 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 
 ## 产品目标
 
-一期交付一个可发布、可测试、默认本地执行的 Office 文档基础能力：
+一期面向内部用户交付一个可测试、默认本地执行的 Office 文档基础能力：
 
 1. ShenDesk 安装后即可使用，不要求用户安装 Office、.NET 或 OfficeCLI。
 2. 支持创建、打开、读取、批量修改和保存 `.docx`、`.xlsx`、`.pptx`。
 3. 支持将文档渲染为 PNG 预览，避免在主 WebView 中执行文档生成的 HTML。
 4. 所有 OfficeCLI 调用由 Rust Core 管理，WebView 不获得任意进程执行权限。
 5. OfficeCLI 版本、源码来源和升级节奏由 ShenDesk 控制，不允许运行时自行更新。
-6. 在 ShenDesk 正式支持的 macOS、Windows 发布目标上通过安装包内 smoke test。
+6. 在 ShenDesk 内部支持的 macOS、Windows 目标上通过最终构建产物内 smoke test。
 
 ## 非目标
 
@@ -39,6 +39,7 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 - 支持 OfficeCLI 的 `watch` 本地 HTTP 预览。
 - 支持用户安装任意版本的 OfficeCLI 或执行任意 CLI 参数。
 - 自动跟随 OfficeCLI 每个上游版本发布。
+- 面向外部用户的 Developer ID 签名、公证或无警告安装体验。
 
 ## 目标用户与场景
 
@@ -64,7 +65,7 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 
 验收条件：
 
-- 正式安装包包含与当前平台和架构匹配的 OfficeCLI sidecar。
+- 内部构建产物包含与当前平台和架构匹配的 OfficeCLI sidecar。
 - 应用可以返回内置 OfficeCLI 版本和可用状态。
 - 缺失、损坏或架构不匹配时返回稳定错误，不尝试在线安装。
 
@@ -126,7 +127,7 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 - 固定 OfficeCLI 源码 tag、commit 和源码归档 SHA-256。
 - CI 使用固定 .NET 10 SDK 从源码构建自包含单文件 sidecar。
 - 支持 macOS arm64、macOS x64、Windows x64。
-- sidecar 随普通构建和正式发布安装包分发。
+- sidecar 随合并后内部构建产物分发；未来公开发布仍使用独立签名流程。
 - Rust Core 提供版本探测、进程调用、超时、输出上限和关闭能力。
 - 所有调用设置 `OFFICECLI_SKIP_UPDATE=1`。
 - 分发 Apache-2.0 `LICENSE`、`NOTICE` 和第三方声明。
@@ -179,9 +180,9 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 ### 发布质量
 
 - 每个平台从最终安装包或 `.app` 中执行 smoke test，而不是只测试构建目录中的裸二进制。
-- macOS sidecar 必须保留 `com.apple.security.cs.allow-jit` entitlement。
-- macOS arm64、macOS x64 均通过 `codesign`、公证和 Gatekeeper 验证。
+- macOS arm64、macOS x64 的内部 `.app` 均能实际启动 OfficeCLI 并完成文档回归。
 - Windows x64 安装后能够执行版本探测和代表性文档操作。
+- 内部 macOS 产物不承诺 Developer ID 签名、公证或 Gatekeeper 无警告安装；不得要求用户全局关闭 Gatekeeper。
 
 ### 可维护性
 
@@ -193,9 +194,8 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 
 一期完成时使用交付指标验收：
 
-- 三个正式目标平台的安装包 smoke test 全部通过。
+- 三个内部目标平台的最终产物 smoke test 全部通过。
 - Word、Excel、PowerPoint 各至少一个创建、读取、修改、关闭回归样本通过。
-- macOS 最终 App 内 sidecar entitlement 校验通过。
 - IPC 测试证明前端不能指定二进制路径或任意命令。
 - OfficeCLI 运行时不会发起自更新，也不会修改应用包内文件。
 
@@ -203,15 +203,17 @@ OfficeCLI 提供不依赖 Microsoft Office 的 `.docx`、`.xlsx`、`.pptx` 创�
 
 ## 发布门槛
 
-以下条件全部满足后才能进入正式发布：
+以下条件全部满足后即可完成内部一期交付：
 
 1. 固定源码与依赖构建链已进入 CI。
 2. Rust Core、IPC、前端 service 和稳定错误测试通过。
 3. 三种文档格式的回归样本通过。
-4. 最终 macOS App 完成 sidecar 签名、公证和实际执行验证。
+4. macOS arm64、macOS x64 最终 `.app` 完成 OfficeCLI 实际执行和文档 smoke。
 5. Windows 安装包完成安装后 smoke test。
 6. 第三方许可证随安装包分发并可在文档中查阅。
 7. 安全评审确认未向 WebView 暴露通用进程执行能力。
+
+面向外部用户发布时，仍必须另行完成 Developer ID 签名、Apple 公证、Gatekeeper 验证和正式更新资产验收；这些条件不属于内部一期关闭门槛。
 
 ## 后续方向
 

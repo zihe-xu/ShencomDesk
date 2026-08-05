@@ -41,6 +41,12 @@ current Rust target's sidecar through `bundle.externalBin`; the three license
 files are included as bundle resources. Use
 `src-tauri/tauri.officecli.conf.json` for non-release installer builds.
 
+The current internal distribution uses the three native artifacts produced by
+the post-merge workflow. Those artifacts are not Developer ID signed or
+notarized; internal macOS users allow only the downloaded ShenDesk app on first
+launch and must not disable Gatekeeper globally. Public distribution remains a
+separate signed-release concern.
+
 macOS release builds use `officecli.entitlements` while Tauri signs the nested
 sidecar under hardened runtime. The release workflow verifies the final
 `ShenDesk.app/Contents/MacOS/officecli` Developer ID signature and requires

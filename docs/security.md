@@ -97,7 +97,7 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - WebView 只接收八种稳定 Office 错误码和固定用户消息；绝对路径、临时目录、Named Pipe、原始 stderr 与文档内容不会进入 IPC 错误或进度 Channel。
 - 创建和修改在 staging 文件上执行，只有 resident 成功 close 后才 no-clobber 提交；修改不会覆盖输入文件。PNG 预览限制为 16 MiB，临时文件读取后立即清理，只通过现有 `data:` 图片 CSP 展示，不加载 OfficeCLI HTML，也不启动 `watch`。
 - OfficeCLI 是具有当前桌面用户原生进程权限的受信任供应链组件，不受 WebView CSP 或 WASM 沙箱限制。仓库以固定 tag、commit、源码 SHA-256、NuGet lock 和 .NET SDK 构建；最终 App/MSI 必须包含对应架构 sidecar 及 `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.txt`。
-- 合并后与发布 smoke 都在 `OFFICECLI_SKIP_UPDATE=1` 下验证精确版本和 DOCX round trip。macOS 还要求 sidecar Developer ID 签名及 `allow-jit` entitlement；Windows 从 MSI 静默安装后的目录验收。检查发生在正常 Artifact 或 Release 资产上传之前。
+- 合并后与发布 smoke 都在 `OFFICECLI_SKIP_UPDATE=1` 下验证精确版本，以及 DOCX、XLSX、PPTX 的创建、修改、读取、PNG 预览和关闭。内部 macOS Artifact 从最终 `.app` 验证对应原生架构和实际执行，但不具备 Developer ID 签名或公证；签名 Tag 发布才额外要求 sidecar Developer ID 签名及 `allow-jit` entitlement。Windows 从 MSI 静默安装后的目录验收。检查发生在正常 Artifact 或 Release 资产上传之前。
 
 ## WASM 插件沙箱
 
@@ -126,3 +126,5 @@ FileService 命令要求绝对路径，并限制读取大小、索引条目数�
 - Release 默认 Draft，核验多平台资产与 `latest.json` 后才发布。
 
 更新签名只证明更新包由对应私钥签发，不代替操作系统平台信任。macOS 正式 Tag 发布另外强制 Developer ID Application 签名、Apple 公证与 Gatekeeper 验证；Windows Authenticode 仍需独立配置。密钥生成、发布步骤和轮换注意事项见 `docs/auto-update.md`。
+
+内部交付不创建正式 Tag，也不发布 `latest.json`。内部用户只从受访问控制的 Workflow Artifact 下载产物并核对构建提交；macOS 仅允许对该应用单次放行，不得全局关闭 Gatekeeper。
