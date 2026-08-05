@@ -6,6 +6,8 @@ ShenDesk 使用 Tauri Updater 2、GitHub Releases 与 Tauri 更新签名实现 m
 https://github.com/zihe-xu/ShencomDesk/releases/latest/download/latest.json
 ```
 
+该流程用于未来面向外部用户的正式签名发布。当前内部交付直接使用受访问控制的合并后 Workflow Artifact，不创建版本 Tag、`latest.json` 或未公证的公开 Release，因此不要求 Apple Developer Program。
+
 ## 运行时架构
 
 ```text

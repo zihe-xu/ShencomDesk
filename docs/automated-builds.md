@@ -41,6 +41,17 @@ shendesk-windows-<short-sha>
 
 Artifact 保留 14 天。找不到预期安装包时上传步骤失败，避免“Workflow 成功但没有产物”的假成功。
 
+这些 Artifact 是当前内部交付渠道，只供有仓库访问权限的内部成员下载。它们不包含 Developer ID、公证或 Tauri Updater 发布元数据：macOS 用户首次启动时通过 Finder 对应用按住 Control 点击并选择“打开”，或在“系统设置 → 隐私与安全性”中单次允许；不得全局关闭 Gatekeeper。Windows 可能显示未知发布者提示，内部用户核对来源和构建提交后再安装。
+
+内部安装步骤：
+
+1. 在仓库 Actions 页面打开目标提交对应且三平台 Job 全绿的 `Post-merge desktop build`。
+2. 在运行页面底部下载本机架构对应的 Artifact，并核对名称中的短 SHA。
+3. macOS 解压后打开 DMG、将 ShenDesk 拖入“应用程序”，首次启动按上述方式单次允许。
+4. Windows 解压后运行 MSI，确认来源为内部仓库构建后接受未知发布者提示。
+
+Artifact 到期后通过 `workflow_dispatch` 对目标提交重新构建，不把旧产物复制到公开下载位置。
+
 三个 Runner 都安装清单固定的 .NET SDK `10.0.302`，从固定 commit、SHA-256 与 NuGet lock 源码构建对应原生 sidecar。macOS 最终 `.app` 和 Windows MSI 静默安装目录必须通过以下门槛后才能上传：
 
 - sidecar 存在且架构分别为 macOS ARM64、macOS x64、Windows x64；
@@ -75,6 +86,8 @@ shendesk-<platform>-<short-sha>-diagnostics
 合并事件必须提供 `merge_commit_sha`。缺失时安全失败，不回退到 PR Head 或默认分支提交。判定结果、平台结果、Artifact 和诊断状态写入 Job Summary。
 
 ## 签名发布
+
+签名发布保留给未来面向外部用户的正式分发，不是 OfficeCLI 内部一期的关闭门槛。没有 Apple Developer Program 时不创建版本 Tag，内部用户继续使用已通过下述 smoke 的合并后 Artifact。
 
 `.github/workflows/release.yml` 只响应 `v*` 标签，不响应 Pull Request。预检脚本 `.github/scripts/validate-release.mjs` 在运行任何跨平台打包前验证版本、标签、release-only Tauri config、Updater 签名材料、Apple Developer ID 证书和公证材料配置状态；Secret 正文不会进入预检进程。
 
