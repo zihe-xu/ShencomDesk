@@ -97,7 +97,7 @@ ShenDesk 使用 Tauri Updater 与 GitHub Releases 提供 macOS / Windows 签名�
 
 Pull Request 合并到 `main` 后，`Post-merge desktop build` Workflow 会在 macOS 与 Windows Runner 上构建 Tauri 安装包，并将产物保留 14 天。
 
-- 普通合并：构建合并后的提交并上传 macOS、Windows Artifact。
+- 普通合并：构建合并后的提交并上传 macOS ARM64、macOS x64、Windows x64 Artifact。
 - 带 `skip-build` 标签的 PR：只记录跳过原因，不执行构建或上传产物。
 - PR 关闭但未合并：不执行构建。
 - 需要补构建时：可在 GitHub Actions 中使用 `workflow_dispatch` 手动触发。

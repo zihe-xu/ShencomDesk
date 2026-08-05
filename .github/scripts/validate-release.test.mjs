@@ -228,8 +228,19 @@ test("release workflow is tag-only and minimizes signing-key exposure", async ()
   assert.match(installVerifier, /OFFICECLI_SKIP_UPDATE: "1"/);
   assert.match(installVerifier, /lipo", \["-archs"/);
   assert.match(installVerifier, /versions\.length !== 1 \|\| versions\[0\] !== expectedVersion/);
-  for (const command of ["--version", "create", "open", "add", "get", "close"]) {
-    assert.match(installVerifier, new RegExp(`\\[\"${command}\"`));
+  for (const command of [
+    "--version",
+    "create",
+    "open",
+    "batch",
+    "get",
+    "view",
+    "close",
+  ]) {
+    assert.match(installVerifier, new RegExp(`\"${command}\"`));
+  }
+  for (const extension of ["docx", "xlsx", "pptx"]) {
+    assert.match(installVerifier, new RegExp(`extension: \"${extension}\"`));
   }
   for (const legalFile of ["LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt"]) {
     assert.match(installVerifier, /manifest\.licenseFiles/);

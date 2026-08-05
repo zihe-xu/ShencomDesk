@@ -5,7 +5,7 @@
 仓库将质量验证、合并后诊断构建和正式签名发布拆成三个独立流程：
 
 - `CI`：Pull Request 和 `main` 的前端/Rust fake-runtime 测试、构建脚本测试，以及固定 macOS ARM64 目标的 OfficeCLI 源码编译。
-- `Post-merge desktop build`：代码进入 `main` 后生成 macOS、Windows 安装包，从最终 App/MSI 验证 OfficeCLI 后上传短期 Artifact。
+- `Post-merge desktop build`：代码进入 `main` 后生成 macOS ARM64、macOS x64、Windows x64 安装包，从最终 App/MSI 验证 OfficeCLI 后上传短期 Artifact。
 - `Signed desktop release`：版本标签触发，从最终安装产物完成验收，再使用受保护密钥生成 Tauri Updater 签名、`latest.json` 和 Draft GitHub Release。
 
 普通构建不读取发布密钥；只有标签发布的 release Job 具有 `contents: write` 和签名 Secret。
@@ -14,7 +14,7 @@
 
 | 场景 | 判定 | 结果 |
 | --- | --- | --- |
-| PR 合并到 `main`，没有 `skip-build` | 构建 | 构建合并提交并上传两个平台的 Artifact |
+| PR 合并到 `main`，没有 `skip-build` | 构建 | 构建合并提交并上传三个目标的 Artifact |
 | PR 合并到 `main`，带 `skip-build` | 跳过 | 不执行构建步骤，不上传 Artifact |
 | PR 关闭但未合并 | 跳过 | 不执行构建步骤，不上传 Artifact |
 | `workflow_dispatch` | 构建 | 构建手动触发时选择的提交 |
@@ -25,7 +25,8 @@
 
 `.github/workflows/build.yml` 使用原生 GitHub-hosted Runner：
 
-- macOS：固定 `macos-26` ARM64 Runner，生成 `.app` 与 `.dmg`。
+- macOS Apple Silicon：固定 `macos-26` ARM64 Runner，生成 `.app` 与 `.dmg`。
+- macOS Intel：固定 `macos-26-intel` x64 Runner，生成 `.app` 与 `.dmg`。
 - Windows：固定 `windows-2022` 与 Visual Studio 2022，生成 `.msi` 与 NSIS `.exe`。
 
 Windows Runner 不使用滚动的 `windows-latest` 标签，避免 GitHub 切换默认 Windows / Visual Studio 镜像时未经评估地改变生产构建环境。升级 Runner 必须通过独立 PR 和真实打包验证。
@@ -33,17 +34,18 @@ Windows Runner 不使用滚动的 `windows-latest` 标签，避免 GitHub 切换
 Artifact 名称包含平台和目标提交的前 12 位 SHA：
 
 ```text
-shendesk-macos-<short-sha>
+shendesk-macos-arm64-<short-sha>
+shendesk-macos-x64-<short-sha>
 shendesk-windows-<short-sha>
 ```
 
 Artifact 保留 14 天。找不到预期安装包时上传步骤失败，避免“Workflow 成功但没有产物”的假成功。
 
-两个 Runner 都安装清单固定的 .NET SDK `10.0.302`，从固定 commit、SHA-256 与 NuGet lock 源码构建对应原生 sidecar。macOS 最终 `.app` 和 Windows MSI 静默安装目录必须通过以下门槛后才能上传：
+三个 Runner 都安装清单固定的 .NET SDK `10.0.302`，从固定 commit、SHA-256 与 NuGet lock 源码构建对应原生 sidecar。macOS 最终 `.app` 和 Windows MSI 静默安装目录必须通过以下门槛后才能上传：
 
-- sidecar 存在且架构分别为 ARM64、x64；
+- sidecar 存在且架构分别为 macOS ARM64、macOS x64、Windows x64；
 - `--version` 中唯一 SemVer token 与 `third_party/officecli/version.json` 完全相等；
-- DOCX `create → open → add → get → close` round trip 成功；
+- DOCX、XLSX、PPTX 均完成 `create → open → batch → get → PNG preview → close` round trip；
 - `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.txt` 位于最终包的 `officecli-licenses` 资源目录。
 
 所有 smoke 子进程都设置 `OFFICECLI_SKIP_UPDATE=1`。任一检查失败时不上传正常构建 Artifact；原有 `tauri-build.log` 仍作为失败诊断 Artifact 保留 7 天。

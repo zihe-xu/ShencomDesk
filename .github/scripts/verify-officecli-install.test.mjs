@@ -60,12 +60,50 @@ test("document smoke failures close an opened resident", async () => {
     () =>
       verifyDocumentSmoke("officecli", async (_command, arguments_) => {
         calls.push(arguments_[0]);
+        if (arguments_[0] === "create") await writeFile(arguments_[1], "document");
         if (arguments_[0] === "get") return "missing marker";
         return "";
       }),
-    /could not read back/,
+    /could not read back docx/,
   );
-  assert.deepEqual(calls, ["create", "open", "add", "get", "close"]);
+  assert.deepEqual(calls, ["create", "open", "batch", "get", "close"]);
+});
+
+test("document smoke covers all Office formats and PNG previews", async () => {
+  const calls = [];
+  await verifyDocumentSmoke("officecli", async (_command, arguments_, options) => {
+    calls.push({ arguments_, options });
+    const operation = arguments_[0];
+    const document = arguments_[1];
+    if (operation === "create") await writeFile(document, "document");
+    if (operation === "get") {
+      if (document.endsWith(".docx")) return "ShenDesk bundled Word smoke test";
+      if (document.endsWith(".xlsx")) return "ShenDesk bundled Excel smoke test";
+      return "ShenDesk bundled PowerPoint smoke test";
+    }
+    if (operation === "view") {
+      await writeFile(arguments_[4], Buffer.from("89504e470d0a1a0a", "hex"));
+    }
+    return "";
+  });
+
+  assert.deepEqual(
+    calls.filter(({ arguments_ }) => arguments_[0] === "create").map(({ arguments_ }) =>
+      arguments_[1].slice(-4),
+    ),
+    ["docx", "xlsx", "pptx"],
+  );
+  assert.deepEqual(
+    calls.filter(({ arguments_ }) => arguments_[0] === "get").map(({ arguments_ }) =>
+      arguments_[2],
+    ),
+    ["/body", "/Sheet1", "/"],
+  );
+  assert.equal(calls.filter(({ arguments_ }) => arguments_[0] === "batch").length, 3);
+  assert.equal(calls.filter(({ arguments_ }) => arguments_[0] === "view").length, 3);
+  assert.ok(
+    calls.every(({ options }) => options.env.OFFICECLI_SKIP_UPDATE === "1"),
+  );
 });
 
 test("requires exactly one Windows installer", async () => {
@@ -95,7 +133,14 @@ test("requires the sidecar and every legal file before smoke testing", async () 
   const execute = async (_command, arguments_) => {
     if (arguments_[0] === "--version") return "officecli 1.0.143\n";
     if (arguments_[0] === "create") await writeFile(arguments_[1], "document");
-    if (arguments_[0] === "get") return "ShenDesk bundled OfficeCLI smoke test";
+    if (arguments_[0] === "get") {
+      if (arguments_[1].endsWith(".docx")) return "ShenDesk bundled Word smoke test";
+      if (arguments_[1].endsWith(".xlsx")) return "ShenDesk bundled Excel smoke test";
+      return "ShenDesk bundled PowerPoint smoke test";
+    }
+    if (arguments_[0] === "view") {
+      await writeFile(arguments_[4], Buffer.from("89504e470d0a1a0a", "hex"));
+    }
     return "";
   };
   await verifyOfficeCliInstall({

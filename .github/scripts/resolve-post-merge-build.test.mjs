@@ -109,7 +109,7 @@ test("merged PR without merge_commit_sha fails closed", () => {
   assert.match(decision.reason, /merge_commit_sha/);
 });
 
-test("workflow pins the Windows runner and retains failed build diagnostics", () => {
+test("workflow builds all supported targets and retains failed build diagnostics", () => {
   const workflow = readFileSync(
     new URL("../workflows/build.yml", import.meta.url),
     "utf8",
@@ -117,13 +117,21 @@ test("workflow pins the Windows runner and retains failed build diagnostics", ()
 
   assert.match(workflow, /runner:\s+windows-2022/);
   assert.doesNotMatch(workflow, /runner:\s+windows-latest/);
+  assert.match(
+    workflow,
+    /runner:\s+macos-26\s+target:\s+aarch64-apple-darwin\s+officecli_arch:\s+arm64/,
+  );
+  assert.match(
+    workflow,
+    /runner:\s+macos-26-intel\s+target:\s+x86_64-apple-darwin\s+officecli_arch:\s+x86_64/,
+  );
   assert.match(workflow, /icon app-icons\/logo-macos\.svg/);
   assert.match(workflow, /icon app-icons\/logo-windows\.svg/);
   assert.match(workflow, /run-tauri-build\.mjs/);
   assert.match(workflow, /Upload failed build diagnostics/);
   assert.match(workflow, /retention-days:\s+7/);
   assert.match(workflow, /Verify bundled OfficeCLI in macOS app/);
-  assert.match(workflow, /--expected-arch arm64/);
+  assert.match(workflow, /--expected-arch \$\{\{ matrix\.officecli_arch \}\}/);
   assert.match(workflow, /Install MSI and verify bundled OfficeCLI/);
   assert.match(workflow, /verify-officecli-windows-msi\.mjs/);
 });

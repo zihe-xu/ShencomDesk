@@ -76,35 +76,112 @@ export function runCommand(
 
 export async function verifyDocumentSmoke(sidecarPath, execute = runCommand) {
   const directory = await mkdtemp(join(tmpdir(), "shendesk-officecli-smoke-"));
-  const document = join(directory, "bundle-smoke.docx");
-  const marker = "ShenDesk bundled OfficeCLI smoke test";
   const env = { ...process.env, OFFICECLI_SKIP_UPDATE: "1" };
-  let residentOpen = false;
+  const cases = [
+    {
+      extension: "docx",
+      marker: "ShenDesk bundled Word smoke test",
+      root: "/body",
+      commands: [
+        {
+          command: "add",
+          parent: "/body",
+          type: "paragraph",
+          props: { text: "ShenDesk bundled Word smoke test" },
+        },
+      ],
+    },
+    {
+      extension: "xlsx",
+      marker: "ShenDesk bundled Excel smoke test",
+      root: "/Sheet1",
+      commands: [
+        {
+          command: "set",
+          path: "/Sheet1/A1",
+          props: { value: "ShenDesk bundled Excel smoke test" },
+        },
+      ],
+    },
+    {
+      extension: "pptx",
+      marker: "ShenDesk bundled PowerPoint smoke test",
+      root: "/",
+      commands: [
+        {
+          command: "add",
+          parent: "/",
+          type: "slide",
+          props: { title: "ShenDesk bundled PowerPoint smoke test" },
+        },
+        {
+          command: "add",
+          parent: "/slide[1]",
+          type: "shape",
+          props: {
+            text: "ShenDesk bundled PowerPoint smoke test",
+            x: "2cm",
+            y: "4cm",
+            width: "20cm",
+            height: "2cm",
+          },
+        },
+      ],
+    },
+  ];
+  let residentDocument;
   try {
-    await execute(sidecarPath, ["create", document], { env });
-    residentOpen = true;
-    await execute(sidecarPath, ["open", document], { env });
-    await execute(
-      sidecarPath,
-      ["add", document, "/body", "--type", "paragraph", "--prop", `text=${marker}`],
-      { env },
-    );
-    const output = await execute(
-      sidecarPath,
-      ["get", document, "/body/p[last()]", "--json"],
-      { capture: true, env },
-    );
-    if (!output.includes(marker)) {
-      throw new Error("OfficeCLI could not read back the smoke-test content");
-    }
-    await execute(sidecarPath, ["close", document], { env });
-    residentOpen = false;
-    if ((await stat(document)).size === 0) {
-      throw new Error("OfficeCLI did not persist the smoke-test document");
+    for (const smokeCase of cases) {
+      const document = join(directory, `bundle-smoke.${smokeCase.extension}`);
+      const preview = join(directory, `bundle-smoke-${smokeCase.extension}.png`);
+      await execute(sidecarPath, ["create", document, "--json"], { env });
+      residentDocument = document;
+      await execute(sidecarPath, ["open", document, "--json"], { env });
+      await execute(
+        sidecarPath,
+        [
+          "batch",
+          document,
+          "--commands",
+          JSON.stringify(smokeCase.commands),
+          "--json",
+        ],
+        { env },
+      );
+      const output = await execute(
+        sidecarPath,
+        ["get", document, smokeCase.root, "--depth", "3", "--json"],
+        { capture: true, env },
+      );
+      if (!output.includes(smokeCase.marker)) {
+        throw new Error(
+          `OfficeCLI could not read back ${smokeCase.extension} smoke-test content`,
+        );
+      }
+      await execute(
+        sidecarPath,
+        ["view", document, "screenshot", "-o", preview, "--page", "1", "--json"],
+        { env },
+      );
+      const previewBytes = await readFile(preview);
+      if (!previewBytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))) {
+        throw new Error(
+          `OfficeCLI did not generate a valid ${smokeCase.extension} PNG preview`,
+        );
+      }
+      await execute(sidecarPath, ["close", document, "--json"], { env });
+      residentDocument = undefined;
+      if ((await stat(document)).size === 0) {
+        throw new Error(
+          `OfficeCLI did not persist the ${smokeCase.extension} smoke-test document`,
+        );
+      }
     }
   } finally {
-    if (residentOpen) {
-      await execute(sidecarPath, ["close", document], { env }).catch(() => {});
+    if (residentDocument) {
+      await execute(sidecarPath, ["close", residentDocument, "--json"], { env }).catch(
+        () => {},
+      );
     }
     await rm(directory, { recursive: true, force: true });
   }

@@ -52,11 +52,12 @@ entitlement, native-architecture, stapler, and Gatekeeper checks against that
 final app path.
 
 The same wrapper executes the bundled OfficeCLI on both native macOS runners.
-It checks the pinned version, creates and opens a Word document, writes and
-reads a marker paragraph through the resident process, and closes the resident
-to persist the file. Every invocation sets `OFFICECLI_SKIP_UPDATE=1`. The
-wrapper must succeed before `tauri-action` creates or uploads Draft release
-assets, so a signing, notarization, or smoke-test failure publishes nothing.
+It checks the pinned version, then exercises Word, Excel, and PowerPoint through
+`create → open → batch → get → PNG preview → close`, confirming that each
+resident persists its document. Every invocation sets
+`OFFICECLI_SKIP_UPDATE=1`. The wrapper must succeed before `tauri-action`
+creates or uploads Draft release assets, so a signing, notarization, or
+smoke-test failure publishes nothing.
 
 ## Runtime boundary
 
