@@ -56,10 +56,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macOS
-            artifact_key: macos
+          - platform: macOS Apple Silicon
+            artifact_key: macos-arm64
             runner: macos-26
             target: aarch64-apple-darwin
+            officecli_arch: arm64
+            artifact_paths: |
+              apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+              apps/desktop/src-tauri/target/release/bundle/macos/*.app
+          - platform: macOS Intel
+            artifact_key: macos-x64
+            runner: macos-26-intel
+            target: x86_64-apple-darwin
+            officecli_arch: x86_64
             artifact_paths: |
               apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
               apps/desktop/src-tauri/target/release/bundle/macos/*.app
@@ -129,7 +138,7 @@ jobs:
           node .github/scripts/verify-officecli-install.mjs
           --root apps/desktop/src-tauri/target/release/bundle/macos/ShenDesk.app/Contents/MacOS
           --resources apps/desktop/src-tauri/target/release/bundle/macos/ShenDesk.app/Contents/Resources
-          --expected-arch arm64
+          --expected-arch ${{ matrix.officecli_arch }}
 
       - name: Install MSI and verify bundled OfficeCLI
         if: runner.os == 'Windows'
