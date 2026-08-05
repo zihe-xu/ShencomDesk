@@ -69,8 +69,8 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     })?);
     let update_backend = Arc::new(TauriUpdateBackend::new(app.handle().clone()));
     let auth_environment = AuthEnvironment::from_process_environment()?;
-    let auth_backend = Arc::new(ShencomAuthBackend::new(auth_environment));
-    let auth_session_store = Arc::new(match KeyringAuthSessionStore::new(auth_environment) {
+    let auth_backend = Arc::new(ShencomAuthBackend::new(auth_environment.clone()));
+    let auth_session_store = Arc::new(match KeyringAuthSessionStore::new(&auth_environment) {
         Ok(store) => store,
         Err(error) => {
             tracing::warn!(

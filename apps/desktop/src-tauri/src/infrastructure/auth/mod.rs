@@ -16,62 +16,101 @@ use crate::{
 };
 
 const AUTH_ENVIRONMENT_VARIABLE: &str = "SHENDESK_AUTH_ENVIRONMENT";
-const TEST_BASE_URL: &str = "https://tst-crm.shencom.cn";
-const TEST_SCID: &str = "sca15516911b95f35b";
-const PRODUCTION_BASE_URL: &str = "https://crm.shencom.cn";
-const PRODUCTION_SCID: &str = "sc8820513B9B1903E4";
+const AUTH_HOST_VARIABLE: &str = "SHENDESK_AUTH_HOST";
+const AUTH_SCID_VARIABLE: &str = "SHENDESK_AUTH_SCID";
 const LOGIN_PATH: &str = "/service-uaa/user/login";
 const REFRESH_PATH: &str = "/service-uaa/auth/token-user/refresh";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(15);
 const KEYRING_SERVICE: &str = "com.shencom.shendesk.auth";
 const AUTH_SESSION_VERSION: u8 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthEnvironment {
-    Test,
-    Production,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthEnvironment {
+    name: String,
+    base_url: String,
+    scid: String,
 }
 
 impl AuthEnvironment {
     pub fn from_process_environment() -> Result<Self, AuthServiceError> {
-        match std::env::var(AUTH_ENVIRONMENT_VARIABLE) {
-            Ok(value) => Self::parse(&value),
-            Err(std::env::VarError::NotPresent) => Ok(Self::Test),
-            Err(error) => Err(AuthServiceError::unavailable(format!(
-                "{AUTH_ENVIRONMENT_VARIABLE} could not be read: {error}"
-            ))),
-        }
+        Self::new(
+            environment_value(
+                AUTH_ENVIRONMENT_VARIABLE,
+                option_env!("SHENDESK_EMBEDDED_AUTH_ENVIRONMENT"),
+            )?,
+            environment_value(
+                AUTH_HOST_VARIABLE,
+                option_env!("SHENDESK_EMBEDDED_AUTH_HOST"),
+            )?,
+            environment_value(
+                AUTH_SCID_VARIABLE,
+                option_env!("SHENDESK_EMBEDDED_AUTH_SCID"),
+            )?,
+        )
     }
 
-    fn parse(value: &str) -> Result<Self, AuthServiceError> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "test" => Ok(Self::Test),
-            "production" => Ok(Self::Production),
-            value => Err(AuthServiceError::unavailable(format!(
-                "unsupported {AUTH_ENVIRONMENT_VARIABLE} value: {value}"
-            ))),
+    fn new(
+        name: impl Into<String>,
+        base_url: impl Into<String>,
+        scid: impl Into<String>,
+    ) -> Result<Self, AuthServiceError> {
+        let name = name.into().trim().to_ascii_lowercase();
+        if !matches!(name.as_str(), "development" | "production" | "test") {
+            return Err(AuthServiceError::unavailable(format!(
+                "unsupported {AUTH_ENVIRONMENT_VARIABLE} value: {name}"
+            )));
         }
+
+        let base_url = base_url.into().trim().trim_end_matches('/').to_owned();
+        let parsed_url = reqwest::Url::parse(&base_url).map_err(|error| {
+            AuthServiceError::unavailable(format!("{AUTH_HOST_VARIABLE} is invalid: {error}"))
+        })?;
+        if parsed_url.scheme() != "https" || parsed_url.host_str().is_none() {
+            return Err(AuthServiceError::unavailable(format!(
+                "{AUTH_HOST_VARIABLE} must be an HTTPS origin"
+            )));
+        }
+
+        let scid = scid.into().trim().to_owned();
+        if scid.is_empty() {
+            return Err(AuthServiceError::unavailable(format!(
+                "{AUTH_SCID_VARIABLE} must not be empty"
+            )));
+        }
+
+        Ok(Self {
+            name,
+            base_url,
+            scid,
+        })
     }
 
-    fn base_url(self) -> &'static str {
-        match self {
-            Self::Test => TEST_BASE_URL,
-            Self::Production => PRODUCTION_BASE_URL,
-        }
+    fn base_url(&self) -> &str {
+        &self.base_url
     }
 
-    fn scid(self) -> &'static str {
-        match self {
-            Self::Test => TEST_SCID,
-            Self::Production => PRODUCTION_SCID,
-        }
+    fn scid(&self) -> &str {
+        &self.scid
     }
 
-    fn keyring_account(self) -> &'static str {
-        match self {
-            Self::Test => "test-session-v1",
-            Self::Production => "production-session-v1",
-        }
+    fn keyring_account(&self) -> String {
+        format!("{}-session-v1", self.name)
+    }
+}
+
+fn environment_value(
+    name: &str,
+    embedded_value: Option<&'static str>,
+) -> Result<String, AuthServiceError> {
+    match std::env::var(name) {
+        Ok(value) if !value.trim().is_empty() => Ok(value),
+        Ok(_) | Err(std::env::VarError::NotPresent) => embedded_value
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| AuthServiceError::unavailable(format!("{name} is not configured"))),
+        Err(error) => Err(AuthServiceError::unavailable(format!(
+            "{name} could not be read: {error}"
+        ))),
     }
 }
 
@@ -186,9 +225,9 @@ impl std::fmt::Debug for KeyringAuthSessionStore {
 }
 
 impl KeyringAuthSessionStore {
-    pub fn new(environment: AuthEnvironment) -> Result<Self, AuthServiceError> {
+    pub fn new(environment: &AuthEnvironment) -> Result<Self, AuthServiceError> {
         let entry =
-            Entry::new(KEYRING_SERVICE, environment.keyring_account()).map_err(|error| {
+            Entry::new(KEYRING_SERVICE, &environment.keyring_account()).map_err(|error| {
                 AuthServiceError::storage(format!(
                     "system credential store could not be initialized: {error}"
                 ))
@@ -314,64 +353,51 @@ mod tests {
     }
 
     #[test]
-    fn builds_the_confirmed_test_environment_login_request() {
-        let backend = ShencomAuthBackend::new(AuthEnvironment::Test);
-        let request = backend
-            .build_login_request(&LoginRequest {
-                username: "13800000000".to_owned(),
-                password: "password".to_owned(),
-            })
-            .expect("login request should build");
-
-        assert_eq!(request.method(), Method::POST);
-        assert_eq!(
-            request.url().as_str(),
-            format!("{TEST_BASE_URL}{LOGIN_PATH}")
-        );
-        assert_eq!(
-            request.headers()["scid"]
-                .to_str()
-                .expect("scid header should be text"),
-            TEST_SCID
-        );
-        assert_eq!(
-            request.headers()[ACCEPT]
-                .to_str()
-                .expect("accept header should be text"),
-            "*/*"
-        );
-        assert_eq!(
-            request.headers()[CONTENT_TYPE]
-                .to_str()
-                .expect("content type header should be text"),
-            "application/json"
-        );
-        assert_eq!(request.timeout(), Some(&LOGIN_TIMEOUT));
-
-        let body: Value = serde_json::from_slice(
-            request
-                .body()
-                .and_then(reqwest::Body::as_bytes)
-                .expect("JSON body should be buffered"),
-        )
-        .expect("request body should contain JSON");
-        assert_eq!(body["username"], "13800000000");
-        assert_eq!(body["password"], "password");
-    }
-
-    #[test]
-    fn builds_refresh_requests_for_each_environment() {
-        for (environment, base_url, scid) in [
-            (AuthEnvironment::Test, TEST_BASE_URL, TEST_SCID),
+    fn builds_login_requests_from_environment_configuration() {
+        for (name, base_url, scid) in [
             (
-                AuthEnvironment::Production,
-                PRODUCTION_BASE_URL,
-                PRODUCTION_SCID,
+                "development",
+                "https://development.example.com",
+                "development-scid",
             ),
+            (
+                "production",
+                "https://production.example.com",
+                "production-scid",
+            ),
+            ("test", "https://test.example.com", "test-scid"),
         ] {
+            let environment =
+                AuthEnvironment::new(name, base_url, scid).expect("environment should be valid");
             let request = ShencomAuthBackend::new(environment)
-                .build_refresh_request("refresh-token")
-                .expect("refresh request should build");
+                .build_login_request(&LoginRequest {
+                    username: "13800000000".to_owned(),
+                    password: "password".to_owned(),
+                })
+                .expect("login request should build");
+
+            assert_eq!(request.method(), Method::POST);
+            assert_eq!(request.url().as_str(), format!("{base_url}{LOGIN_PATH}"));
+            assert_eq!(
+                request.headers()["scid"]
+                    .to_str()
+                    .expect("scid header should be text"),
+                scid
+            );
+            assert_eq!(
+                request.headers()[ACCEPT]
+                    .to_str()
+                    .expect("accept header should be text"),
+                "*/*"
+            );
+            assert_eq!(
+                request.headers()[CONTENT_TYPE]
+                    .to_str()
+                    .expect("content type header should be text"),
+                "application/json"
+            );
+            assert_eq!(request.timeout(), Some(&LOGIN_TIMEOUT));
+
             let body: Value = serde_json::from_slice(
                 request
                     .body()
@@ -379,31 +405,52 @@ mod tests {
                     .expect("JSON body should be buffered"),
             )
             .expect("request body should contain JSON");
-
-            assert_eq!(request.method(), Method::POST);
-            assert_eq!(request.url().as_str(), format!("{base_url}{REFRESH_PATH}"));
-            assert_eq!(
-                request.headers()["scid"]
-                    .to_str()
-                    .expect("scid header should be text"),
-                scid
-            );
-            assert_eq!(body["refreshToken"], "refresh-token");
-            assert_eq!(request.timeout(), Some(&LOGIN_TIMEOUT));
+            assert_eq!(body["username"], "13800000000");
+            assert_eq!(body["password"], "password");
         }
     }
 
     #[test]
+    fn builds_refresh_requests_from_environment_configuration() {
+        let environment =
+            AuthEnvironment::new("test", "https://test.example.com", "environment-scid")
+                .expect("environment should be valid");
+        let request = ShencomAuthBackend::new(environment)
+            .build_refresh_request("refresh-token")
+            .expect("refresh request should build");
+        let body: Value = serde_json::from_slice(
+            request
+                .body()
+                .and_then(reqwest::Body::as_bytes)
+                .expect("JSON body should be buffered"),
+        )
+        .expect("request body should contain JSON");
+
+        assert_eq!(request.method(), Method::POST);
+        assert_eq!(
+            request.url().as_str(),
+            "https://test.example.com/service-uaa/auth/token-user/refresh"
+        );
+        assert_eq!(request.headers()["scid"], "environment-scid");
+        assert_eq!(body["refreshToken"], "refresh-token");
+        assert_eq!(request.timeout(), Some(&LOGIN_TIMEOUT));
+    }
+
+    #[test]
     fn validates_authentication_environment_values() {
-        assert_eq!(
-            AuthEnvironment::parse(" test ").expect("test should parse"),
-            AuthEnvironment::Test
-        );
-        assert_eq!(
-            AuthEnvironment::parse("PRODUCTION").expect("production should parse"),
-            AuthEnvironment::Production
-        );
-        assert!(AuthEnvironment::parse("staging").is_err());
+        let environment = AuthEnvironment::new(
+            " PRODUCTION ",
+            "https://crm.example.com/",
+            " production-scid ",
+        )
+        .expect("production should parse");
+
+        assert_eq!(environment.name, "production");
+        assert_eq!(environment.base_url(), "https://crm.example.com");
+        assert_eq!(environment.scid(), "production-scid");
+        assert!(AuthEnvironment::new("staging", "https://example.com", "scid").is_err());
+        assert!(AuthEnvironment::new("test", "http://example.com", "scid").is_err());
+        assert!(AuthEnvironment::new("test", "https://example.com", " ").is_err());
     }
 
     #[test]

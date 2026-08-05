@@ -26,15 +26,7 @@ pub async fn get_auth_state(state: State<'_, AppState>) -> IpcResult<AuthState> 
 
 #[tauri::command]
 pub async fn logout(state: State<'_, AppState>) -> IpcResult<AuthState> {
-    let service = state.auth_service().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || service.logout())
-        .await
-        .map_err(|error| {
-            tracing::error!(error = %error, "IPC logout worker failed");
-            IpcError::auth_unavailable()
-        })?;
-
-    result.map_err(|error| {
+    state.auth_service().logout().await.map_err(|error| {
         tracing::error!(error = %error, "IPC logout command failed");
         map_auth_error(&error)
     })

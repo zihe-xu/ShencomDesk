@@ -13,14 +13,17 @@
 
 ## 认证环境变量
 
-Rust 认证适配器在启动时读取 `SHENDESK_AUTH_ENVIRONMENT`：
+认证服务使用仓库根目录的模式文件：
 
-| 值 | 认证域名 | 凭据库账户 |
+| 模式 | 配置文件 | 凭据库账户 |
 |---|---|---|
-| `test`（默认） | `https://tst-crm.shencom.cn` | `test-session-v1` |
-| `production` | `https://crm.shencom.cn` | `production-session-v1` |
+| `development` | `.env.development` | `development-session-v1` |
+| `production` | `.env.production` | `production-session-v1` |
+| `test` | `.env.test` | `test-session-v1` |
 
-登录与 Token 刷新会使用所选环境对应的 `scid`。不支持的值会使初始化失败，不会回退到另一个环境。该变量不属于用户可编辑的 `AppConfig`，切换环境不会复用另一环境保存的 Token。
+每个模式文件必须提供 `HOST` 和 `SCID`。`pnpm tauri -- dev` 默认加载 `development`，`pnpm tauri -- build` 默认加载 `production`；进程变量 `SHENDESK_AUTH_ENVIRONMENT` 可以显式选择 `development`、`production` 或 `test`。`.env.local` 按 Vite 规则提供本地覆盖。
+
+Tauri 启动器只读取 `HOST`、`SCID` 和所选模式，并映射为 Rust 专用的 `SHENDESK_AUTH_HOST`、`SHENDESK_AUTH_SCID`、`SHENDESK_AUTH_ENVIRONMENT`，不会把测试账号或其他环境变量注入 WebView。专用变量避免与 Cargo 的 `HOST` 目标三元组变量冲突；生产构建通过 `build.rs` 嵌入同一配置，使安装后的应用不依赖仓库中的环境文件。缺少配置、非 HTTPS `HOST`、空 `SCID` 或不支持的模式会阻止认证服务初始化，不会回退到其他环境；不同模式不会复用系统凭据库中的 Token。
 
 ## 存储
 

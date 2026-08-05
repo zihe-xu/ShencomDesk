@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "node scripts/run-tauri.mjs",
+    "tauri:cli": "tauri"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.16",

@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TOKEN_FILE="$PROJECT_DIR/node_modules/temp/token.json"
 EXPIRY_MARGIN=60
+AUTH_ENVIRONMENT="${SHENDESK_AUTH_ENVIRONMENT:-development}"
+ENV_FILE="$PROJECT_DIR/.env.$AUTH_ENVIRONMENT"
 
 MODE="default"
 case "${1:-}" in
@@ -19,6 +21,16 @@ case "${1:-}" in
 esac
 [ "$#" -le 1 ] || { echo "用法：$0 [--print|--force|--check]" >&2; exit 2; }
 
+if [ ! -f "$ENV_FILE" ]; then
+  echo "认证环境文件不存在：$ENV_FILE" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
 if [ -f "$PROJECT_DIR/.env.local" ]; then
   set -a
   # shellcheck disable=SC1091
@@ -26,15 +38,14 @@ if [ -f "$PROJECT_DIR/.env.local" ]; then
   set +a
 fi
 
-: "${TEST_LOGIN_URL:?请在 .env.local 配置 TEST_LOGIN_URL}"
-: "${SCID:?请在 .env.local 配置 SCID}"
+: "${HOST:?请在 $ENV_FILE 配置 HOST}"
+: "${SCID:?请在 $ENV_FILE 配置 SCID}"
 : "${TEST_USERNAME:?请在 .env.local 配置 TEST_USERNAME}"
 : "${TEST_PASSWORD:?请在 .env.local 配置 TEST_PASSWORD}"
 
-LOGIN_URL="${TEST_LOGIN_URL:-$TEST_LOGIN_URL}"
-SCID="${TEST_SCID:-$SCID}"
-USERNAME="${TEST_USERNAME:-$DEFAULT_USERNAME}"
-PASSWORD="${TEST_PASSWORD:-$DEFAULT_PASSWORD}"
+LOGIN_URL="${HOST%/}/service-uaa/user/login"
+USERNAME="$TEST_USERNAME"
+PASSWORD="$TEST_PASSWORD"
 
 read_cache() {
   python3 - "$TOKEN_FILE" "$EXPIRY_MARGIN" "$1" <<'PY'
